@@ -441,16 +441,33 @@ public partial class LibraryItemViewModel : ViewModelBase
     public string Title { get; init; } = "";
     public string Subtitle { get; init; } = "";
     public bool IsInstalled { get; init; }
+    public long PlaytimeSeconds { get; init; }
     public string PlaytimeLabel { get; init; } = "";
+    public string PlayStatusValue { get; init; } = "unplayed";
     public string PlayStatusLabel { get; init; } = "";
     public string UserRatingLabel { get; init; } = "";
     public string F95RatingLabel { get; init; } = "";
+    public double? UserRating { get; init; }
+    public double? F95Rating { get; init; }
     public bool HasUserRating { get; init; }
     public bool HasF95Rating { get; init; }
     public string? CoverUrl { get; init; }
     public List<string> ImageCandidates { get; init; } = [];
     [ObservableProperty] private Bitmap? _cover;
     [ObservableProperty] private AnimatedMedia? _coverAnimation;
+}
+
+public sealed class LibraryChoice
+{
+    public LibraryChoice(string value, string label)
+    {
+        Value = value;
+        Label = label;
+    }
+
+    public string Value { get; }
+    public string Label { get; }
+    public override string ToString() => Label;
 }
 
 public partial class CloudSaveItemViewModel : ViewModelBase
@@ -508,26 +525,60 @@ public partial class LibraryViewModel : ViewModelBase
     private readonly MediaCacheService _media;
     private readonly Func<long, Task> _openGame;
     private readonly List<LibraryItemViewModel> _allGames = [];
+    private bool _suppressFilterRefresh;
 
     public LibraryViewModel(AfterglowAppService app, MediaCacheService media, Func<long, Task> openGame)
     {
         _app = app;
         _media = media;
         _openGame = openGame;
+        SortBy = SortChoices[0];
+        StatusFilter = StatusChoices[0];
+        InstallFilter = InstallChoices[0];
+        CardSizeChoice = CardSizeChoices[1];
         ApplyCardSizeFromPrefs();
     }
 
     public ObservableCollection<LibraryItemViewModel> Games { get; } = [];
-    public ObservableCollection<string> SortOptions { get; } = ["title", "updated", "rating", "playtime"];
-    public ObservableCollection<string> PlayStatusOptions { get; } = ["", "unplayed", "playing", "completed", "on_hold", "dropped"];
-    public ObservableCollection<string> InstallFilterOptions { get; } = ["All games", "Installed"];
-    public ObservableCollection<string> CardSizeOptions { get; } = ["Small", "Medium", "Large"];
+
+    public ObservableCollection<LibraryChoice> SortChoices { get; } =
+    [
+        new("title_asc", "Name (A–Z)"),
+        new("title_desc", "Name (Z–A)"),
+        new("updated_desc", "Recently updated"),
+        new("rating_desc", "F95 rating"),
+        new("user_rating_desc", "Your rating"),
+        new("playtime_desc", "Playtime")
+    ];
+
+    public ObservableCollection<LibraryChoice> StatusChoices { get; } =
+    [
+        new("", "Any status"),
+        new("unplayed", "Unplayed"),
+        new("playing", "Playing"),
+        new("completed", "Completed"),
+        new("on_hold", "On hold"),
+        new("dropped", "Dropped")
+    ];
+
+    public ObservableCollection<LibraryChoice> InstallChoices { get; } =
+    [
+        new("all", "All games"),
+        new("installed", "Installed only")
+    ];
+
+    public ObservableCollection<LibraryChoice> CardSizeChoices { get; } =
+    [
+        new("small", "Small"),
+        new("medium", "Medium"),
+        new("large", "Large")
+    ];
 
     [ObservableProperty] private string _search = "";
-    [ObservableProperty] private string _sort = "title";
-    [ObservableProperty] private string _playStatus = "";
-    [ObservableProperty] private string _installFilter = "All games";
-    [ObservableProperty] private string _cardSize = "Medium";
+    [ObservableProperty] private LibraryChoice? _sortBy;
+    [ObservableProperty] private LibraryChoice? _statusFilter;
+    [ObservableProperty] private LibraryChoice? _installFilter;
+    [ObservableProperty] private LibraryChoice? _cardSizeChoice;
     [ObservableProperty] private string? _error;
     [ObservableProperty] private string? _mediaStatus;
     [ObservableProperty] private bool _busy;
@@ -544,10 +595,15 @@ public partial class LibraryViewModel : ViewModelBase
         _media.ResetStats();
         try
         {
+            var sortValue = SortBy?.Value ?? "title_asc";
+            var hubSort = sortValue is "playtime_desc" ? "title_asc" : sortValue;
+            var statusValue = StatusFilter?.Value;
+            if (string.IsNullOrWhiteSpace(statusValue)) statusValue = null;
+
             var list = await _app.Hub.GetLibraryAsync(
-                string.IsNullOrWhiteSpace(Search) ? null : Search,
-                string.IsNullOrWhiteSpace(PlayStatus) ? null : PlayStatus,
-                string.IsNullOrWhiteSpace(Sort) ? null : Sort);
+                string.IsNullOrWhiteSpace(Search) ? null : Search.Trim(),
+                statusValue,
+                hubSort);
             var installs = (await _app.Database.GetInstallsAsync()).ToDictionary(x => x.GameId);
             _allGames.Clear();
             foreach (var g in list)
@@ -557,13 +613,15 @@ public partial class LibraryViewModel : ViewModelBase
                 if (!string.IsNullOrWhiteSpace(g.CoverUrl)) candidates.Add(g.CoverUrl);
                 candidates.AddRange(g.PreviewUrls.Where(x => !string.IsNullOrWhiteSpace(x)));
                 var playStatus = (g.Game.PlayStatus ?? "unplayed").Trim().ToLowerInvariant();
+                if (playStatus is "on-hold") playStatus = "on_hold";
                 var playStatusLabel = playStatus switch
                 {
                     "playing" => "Playing",
                     "completed" => "Completed",
                     "dropped" => "Dropped",
-                    "on_hold" or "on-hold" => "On hold",
-                    _ => ""
+                    "on_hold" => "On hold",
+                    "unplayed" => "Unplayed",
+                    _ => string.IsNullOrWhiteSpace(playStatus) ? "Unplayed" : playStatus
                 };
                 var item = new LibraryItemViewModel
                 {
@@ -571,8 +629,12 @@ public partial class LibraryViewModel : ViewModelBase
                     Title = g.Game.Title,
                     Subtitle = string.Join(" · ", new[] { g.Game.Developer, g.Game.Version }.Where(x => !string.IsNullOrWhiteSpace(x))),
                     IsInstalled = install is not null,
+                    PlaytimeSeconds = g.Game.PlaytimeSeconds,
                     PlaytimeLabel = LibraryPaths.FormatPlaytime(g.Game.PlaytimeSeconds),
+                    PlayStatusValue = playStatus,
                     PlayStatusLabel = playStatusLabel,
+                    UserRating = g.Game.UserRating,
+                    F95Rating = g.Game.Rating,
                     HasUserRating = g.Game.UserRating is > 0,
                     UserRatingLabel = g.Game.UserRating is > 0 ? $"You ★ {g.Game.UserRating:0.0}" : "You —",
                     HasF95Rating = g.Game.Rating is > 0,
@@ -583,7 +645,14 @@ public partial class LibraryViewModel : ViewModelBase
                 _allGames.Add(item);
             }
 
-            ApplyInstallFilter();
+            if (sortValue is "playtime_desc")
+            {
+                var ordered = _allGames.OrderByDescending(g => g.PlaytimeSeconds).ThenBy(g => g.Title, StringComparer.OrdinalIgnoreCase).ToList();
+                _allGames.Clear();
+                _allGames.AddRange(ordered);
+            }
+
+            ApplyLocalFilters();
 
             var missingUrls = _allGames.Count(g => g.ImageCandidates.Count == 0);
             var tasks = _allGames.Select(LoadCoverAsync).ToArray();
@@ -597,27 +666,51 @@ public partial class LibraryViewModel : ViewModelBase
         finally { Busy = false; }
     }
 
-    partial void OnInstallFilterChanged(string value) => ApplyInstallFilter();
-    partial void OnCardSizeChanged(string value) => _ = PersistCardSizeAsync();
+    partial void OnSortByChanged(LibraryChoice? value)
+    {
+        if (_suppressFilterRefresh || value is null) return;
+        _ = RefreshAsync();
+    }
+
+    partial void OnStatusFilterChanged(LibraryChoice? value)
+    {
+        if (_suppressFilterRefresh || value is null) return;
+        _ = RefreshAsync();
+    }
+
+    partial void OnInstallFilterChanged(LibraryChoice? value)
+    {
+        if (_suppressFilterRefresh || value is null) return;
+        ApplyLocalFilters();
+    }
+
+    partial void OnCardSizeChoiceChanged(LibraryChoice? value)
+    {
+        if (_suppressFilterRefresh || value is null) return;
+        _ = PersistCardSizeAsync();
+    }
 
     private void ApplyCardSizeFromPrefs()
     {
         var scale = Math.Clamp(_app.Preferences.LibraryCardScale, 0.75, 1.5);
-        CardSize = scale switch
+        var choice = scale switch
         {
-            <= 0.85 => "Small",
-            >= 1.2 => "Large",
-            _ => "Medium"
+            <= 0.85 => CardSizeChoices[0],
+            >= 1.2 => CardSizeChoices[2],
+            _ => CardSizeChoices[1]
         };
+        _suppressFilterRefresh = true;
+        CardSizeChoice = choice;
+        _suppressFilterRefresh = false;
         ApplyCardMetrics(scale);
     }
 
     private async Task PersistCardSizeAsync()
     {
-        var scale = CardSize switch
+        var scale = CardSizeChoice?.Value switch
         {
-            "Small" => 0.8,
-            "Large" => 1.25,
+            "small" => 0.8,
+            "large" => 1.25,
             _ => 1.0
         };
         ApplyCardMetrics(scale);
@@ -634,9 +727,9 @@ public partial class LibraryViewModel : ViewModelBase
         MetaFontSize = Math.Clamp(11.5 * scale, 11, 15);
     }
 
-    private void ApplyInstallFilter()
+    private void ApplyLocalFilters()
     {
-        var installedOnly = string.Equals(InstallFilter, "Installed", StringComparison.OrdinalIgnoreCase);
+        var installedOnly = string.Equals(InstallFilter?.Value, "installed", StringComparison.OrdinalIgnoreCase);
         Games.Clear();
         foreach (var g in _allGames)
         {
