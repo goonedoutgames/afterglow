@@ -10,8 +10,7 @@
             ClipToBounds="True">
       <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                     VerticalScrollBarVisibility="Auto"
-                    Padding="2,0,10,0"
-                    ctrl:SmoothScroll.IsEnabled="True">
+                    Padding="2,0,10,0">
         <StackPanel Spacing="14" Margin="2,0,4,0">
           <TextBlock Text="Library" Classes="field-label" Margin="0" FontSize="15" />
 
@@ -39,6 +38,33 @@
                       SelectedItem="{Binding SortBy}" DisplayMemberBinding="{Binding Label}" />
           </StackPanel>
 
+          <StackPanel Spacing="6">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="Tags" Classes="field-label" Margin="0" VerticalAlignment="Center" />
+              <Button Grid.Column="1" Classes="ghost" Content="Clear" Padding="8,4" MinHeight="28"
+                      Command="{Binding ClearTagFiltersCommand}" IsVisible="{Binding HasSelectedTags}" />
+            </Grid>
+            <TextBlock Text="{Binding SelectedTagsLabel}" Classes="caption" TextWrapping="Wrap"
+                       IsVisible="{Binding HasSelectedTags}" />
+            <ItemsControl ItemsSource="{Binding AvailableTags}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:LibraryTagFilterItem">
+                  <Border Classes="tag-filter-chip" Classes.is-selected="{Binding IsSelected}"
+                          PointerPressed="TagFilter_PointerPressed" Tag="{Binding}">
+                    <TextBlock Text="{Binding Label}" />
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Classes="caption" Text="No tags in library yet."
+                       IsVisible="{Binding !AvailableTags.Count}" />
+          </StackPanel>
+
           <Border Classes="glass-chip" Padding="10,10">
             <StackPanel Spacing="8">
               <TextBlock Text="Display" Classes="field-label" Margin="0" />
@@ -64,8 +90,7 @@
     </Border>
 
     <ScrollViewer IsVisible="{Binding GridView}" Padding="6,10,6,18"
-                  HorizontalScrollBarVisibility="Disabled"
-                  ctrl:SmoothScroll.IsEnabled="True">
+                  HorizontalScrollBarVisibility="Disabled">
       <ItemsControl ItemsSource="{Binding Games}">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
@@ -103,6 +128,8 @@
                           <TextBlock Text="{Binding PlaytimeLabel}" Classes="caption" VerticalAlignment="Center"
                                      FontSize="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).MetaFontSize}" />
                         </StackPanel>
+
+                        <ctrl:TagBadges Tags="{Binding Tags}" Limit="3" Size="sm" Expandable="False" Clickable="False" />
 
                         <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" RowSpacing="3" ColumnSpacing="6">
                           <TextBlock Text="You" Classes="star-label" VerticalAlignment="Center"
@@ -228,6 +255,7 @@
                     <TextBlock Text="{Binding PlaytimeLabel}" Classes="caption" FontSize="13" VerticalAlignment="Center" />
                   </StackPanel>
                 </StackPanel>
+                <ctrl:TagBadges Tags="{Binding Tags}" Limit="3" Size="sm" Expandable="False" Clickable="False" />
                 <StackPanel Orientation="Horizontal" Spacing="12">
                   <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Text="You" Classes="star-label" VerticalAlignment="Center" />

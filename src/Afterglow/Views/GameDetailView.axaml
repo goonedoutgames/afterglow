@@ -67,6 +67,8 @@
           </StackPanel>
 
           <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+          <ctrl:TagBadges Tags="{Binding Tags}" Limit="5" Size="md" Expandable="True" Clickable="True"
+                          TagClickCommand="{Binding TagClickCommand}" />
           <WrapPanel>
             <Button Classes="accent" Content="Play" Command="{Binding PlayCommand}" IsEnabled="{Binding IsInstalled}" Margin="0,0,8,8" />
             <Button Classes="ghost" Content="Refresh metadata" Command="{Binding RefreshCommand}" Margin="0,0,8,8" />

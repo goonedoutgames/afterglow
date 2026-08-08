@@ -23,4 +23,12 @@ public partial class LibraryView : UserControl
         if (DataContext is not LibraryViewModel { SelectedGame: { } item } vm) return;
         await vm.OpenGameCommand.ExecuteAsync(item);
     }
+
+    private void TagFilter_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not Border { Tag: LibraryTagFilterItem item }) return;
+        if (DataContext is not LibraryViewModel vm) return;
+        e.Handled = true;
+        vm.ToggleTagFilterCommand.Execute(item);
+    }
 }

@@ -31,7 +31,7 @@ public partial class MainViewModel : ViewModelBase
         Browse = new BrowseViewModel(app, media, toasts);
         Downloads = new DownloadsViewModel(app, media);
         Settings = new SettingsViewModel(app, OnConfigured, OnFactoryReset);
-        Detail = new GameDetailViewModel(app, media, () => _ = NavigateAsync("library"), () => _ = NavigateAsync("downloads"), toasts);
+        Detail = new GameDetailViewModel(app, media, () => _ = NavigateAsync("library"), () => _ = NavigateAsync("downloads"), toasts, OnDetailTagClickAsync);
         CurrentPage = FirstRun;
         _app.Downloads.JobChanged += OnDownloadJobChanged;
         _app.Downloads.JobRemoved += (_, id) => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
@@ -321,6 +321,31 @@ public partial class MainViewModel : ViewModelBase
         await Detail.LoadAsync(gameId);
     }
 
+    private async Task OnDetailTagClickAsync(string tag)
+    {
+        var action = "library";
+        try
+        {
+            var s = await _app.Hub.GetSettingsAsync();
+            action = s.TagClickAction is "browse" ? "browse" : "library";
+        }
+        catch
+        {
+            action = Settings.TagClickAction is "browse" ? "browse" : "library";
+        }
+
+        if (action == "browse")
+        {
+            Browse.ApplyIncludeTag(tag);
+            await NavigateAsync("browse");
+        }
+        else
+        {
+            Library.ApplyTagFilter(tag);
+            await NavigateAsync("library");
+        }
+    }
+
     private async Task SafeFlushPlaytimeAsync()
     {
         try { await _app.PlaytimeSync.FlushAsync(); }
@@ -457,10 +482,19 @@ public partial class LibraryItemViewModel : ViewModelBase
     public string F95RatingText => HasF95Rating ? $"{F95Rating:0.0}" : "—";
     public IReadOnlyList<StarSlotViewModel> UserStars { get; init; } = [];
     public IReadOnlyList<StarSlotViewModel> F95Stars { get; init; } = [];
+    public List<string> Tags { get; init; } = [];
     public string? CoverUrl { get; init; }
     public List<string> ImageCandidates { get; init; } = [];
     [ObservableProperty] private Bitmap? _cover;
     [ObservableProperty] private AnimatedMedia? _coverAnimation;
+}
+
+public partial class LibraryTagFilterItem : ViewModelBase
+{
+    public required string Tag { get; init; }
+    public long Count { get; init; }
+    public string Label => Count > 0 ? $"{Tag} ({Count})" : Tag;
+    [ObservableProperty] private bool _isSelected;
 }
 
 public sealed class LibraryChoice
@@ -502,6 +536,7 @@ public partial class CatalogItemViewModel : ViewModelBase
     public string Subtitle => string.Join(" · ", new[] { Result.Creator, Result.Version }.Where(x => !string.IsNullOrWhiteSpace(x)));
     public string Meta => Result.Rating > 0 ? $"★ {Result.Rating:0.0}" : "";
     public string? ThreadUrl => string.IsNullOrWhiteSpace(Result.Url) ? null : Result.Url;
+    public List<string> Tags => Result.Tags;
     [ObservableProperty] private Bitmap? _cover;
     [ObservableProperty] private bool _isInLibrary;
     public string AddButtonLabel => IsInLibrary ? "Added" : "Add";
@@ -548,6 +583,8 @@ public partial class LibraryViewModel : ViewModelBase
     }
 
     public ObservableCollection<LibraryItemViewModel> Games { get; } = [];
+    public ObservableCollection<LibraryTagFilterItem> AvailableTags { get; } = [];
+    public ObservableCollection<string> SelectedTags { get; } = [];
 
     public ObservableCollection<LibraryChoice> SortChoices { get; } =
     [
@@ -596,8 +633,10 @@ public partial class LibraryViewModel : ViewModelBase
     [ObservableProperty] private LibraryItemViewModel? _selectedGame;
     [ObservableProperty] private string _libraryCountLabel = "";
     [ObservableProperty] private double _cardWidth = 236;
-    [ObservableProperty] private double _cardHeight = 430;
+    [ObservableProperty] private double _cardHeight = 455;
     [ObservableProperty] private double _metaFontSize = 13.5;
+    [ObservableProperty] private bool _hasSelectedTags;
+    [ObservableProperty] private string _selectedTagsLabel = "";
 
     public async Task RefreshAsync()
     {
@@ -609,11 +648,20 @@ public partial class LibraryViewModel : ViewModelBase
             var hubSort = sortValue is "playtime_desc" ? "title_asc" : sortValue;
             var statusValue = StatusFilter?.Value;
             if (string.IsNullOrWhiteSpace(statusValue)) statusValue = null;
+            var tagsParam = SelectedTags.Count > 0 ? string.Join(",", SelectedTags) : null;
 
-            var list = await _app.Hub.GetLibraryAsync(
+            var listTask = _app.Hub.GetLibraryAsync(
                 string.IsNullOrWhiteSpace(Search) ? null : Search.Trim(),
                 statusValue,
-                hubSort);
+                hubSort,
+                tags: tagsParam);
+            var tagsTask = _app.Hub.GetLibraryTagsAsync();
+            await Task.WhenAll(listTask, tagsTask);
+            var list = await listTask;
+            var tagList = await tagsTask;
+
+            RefreshAvailableTags(tagList);
+
             var installs = (await _app.Database.GetInstallsAsync()).ToDictionary(x => x.GameId);
             _allGames.Clear();
             foreach (var g in list)
@@ -646,6 +694,7 @@ public partial class LibraryViewModel : ViewModelBase
                     F95RatingLabel = f95Rating is > 0 ? $"F95 ★ {f95Rating:0.0}" : "F95 —",
                     UserStars = BuildCompactStars(userRating),
                     F95Stars = BuildCompactStars(f95Rating),
+                    Tags = TagHelpers.HumanTags(g.Game.Tags),
                     CoverUrl = g.CoverUrl,
                     ImageCandidates = candidates
                 };
@@ -660,6 +709,7 @@ public partial class LibraryViewModel : ViewModelBase
             }
 
             ApplyLocalFilters();
+            UpdateSelectedTagsLabel();
 
             var missingUrls = _allGames.Count(g => g.ImageCandidates.Count == 0);
             var tasks = _allGames.Select(LoadCoverAsync).ToArray();
@@ -671,6 +721,73 @@ public partial class LibraryViewModel : ViewModelBase
         }
         catch (Exception ex) { Error = ex.Message; MediaStatus = null; }
         finally { Busy = false; }
+    }
+
+    private void RefreshAvailableTags(List<LibraryTag> tagList)
+    {
+        var selected = new HashSet<string>(SelectedTags, StringComparer.OrdinalIgnoreCase);
+        AvailableTags.Clear();
+        foreach (var t in tagList.Take(60))
+        {
+            if (string.IsNullOrWhiteSpace(t.Tag) || t.Tag.All(char.IsDigit)) continue;
+            AvailableTags.Add(new LibraryTagFilterItem
+            {
+                Tag = t.Tag,
+                Count = t.Count,
+                IsSelected = selected.Contains(t.Tag)
+            });
+        }
+    }
+
+    public void ApplyTagFilter(string tag)
+    {
+        var clean = tag.Trim();
+        if (string.IsNullOrEmpty(clean) || clean.All(char.IsDigit)) return;
+        SelectedTags.Clear();
+        SelectedTags.Add(clean);
+        HasSelectedTags = true;
+        UpdateSelectedTagsLabel();
+        foreach (var item in AvailableTags)
+            item.IsSelected = string.Equals(item.Tag, clean, StringComparison.OrdinalIgnoreCase);
+        _ = RefreshAsync();
+    }
+
+    [RelayCommand]
+    private void ToggleTagFilter(LibraryTagFilterItem? item)
+    {
+        if (item is null) return;
+        if (item.IsSelected)
+        {
+            item.IsSelected = false;
+            var existing = SelectedTags.FirstOrDefault(t => string.Equals(t, item.Tag, StringComparison.OrdinalIgnoreCase));
+            if (existing is not null) SelectedTags.Remove(existing);
+        }
+        else
+        {
+            item.IsSelected = true;
+            if (!SelectedTags.Any(t => string.Equals(t, item.Tag, StringComparison.OrdinalIgnoreCase)))
+                SelectedTags.Add(item.Tag);
+        }
+        HasSelectedTags = SelectedTags.Count > 0;
+        UpdateSelectedTagsLabel();
+        _ = RefreshAsync();
+    }
+
+    [RelayCommand]
+    private void ClearTagFilters()
+    {
+        SelectedTags.Clear();
+        foreach (var t in AvailableTags) t.IsSelected = false;
+        HasSelectedTags = false;
+        UpdateSelectedTagsLabel();
+        _ = RefreshAsync();
+    }
+
+    private void UpdateSelectedTagsLabel()
+    {
+        SelectedTagsLabel = SelectedTags.Count == 0
+            ? ""
+            : "Filtered · " + string.Join(", ", SelectedTags);
     }
 
     partial void OnSortByChanged(LibraryChoice? value)
@@ -734,7 +851,7 @@ public partial class LibraryViewModel : ViewModelBase
     {
         // Wider base so covers read better; meta text scales up with size.
         CardWidth = Math.Round(236 * scale);
-        CardHeight = Math.Round(430 * scale);
+        CardHeight = Math.Round(455 * scale);
         MetaFontSize = Math.Clamp(13.5 * Math.Sqrt(scale), 12.5, 18);
     }
 
@@ -836,21 +953,32 @@ public partial class BrowseViewModel : ViewModelBase
         _app = app;
         _media = media;
         _toasts = toasts;
+        TagMode = TagModeOptions[0];
     }
 
     public ObservableCollection<CatalogItemViewModel> Results { get; } = [];
     public ObservableCollection<string> SortOptions { get; } = ["date", "likes", "views", "name", "rating"];
     public ObservableCollection<string> DateOptions { get; } = ["Any time", "7 days", "30 days", "90 days", "1 year"];
+    public ObservableCollection<string> IncludeTags { get; } = [];
+    public ObservableCollection<string> ExcludeTags { get; } = [];
+    public ObservableCollection<LibraryChoice> TagModeOptions { get; } =
+    [
+        new("and", "Match all (AND)"),
+        new("or", "Match any (OR)")
+    ];
 
     [ObservableProperty] private string _query = "";
     [ObservableProperty] private string _sort = "date";
     [ObservableProperty] private string _datePreset = "Any time";
     [ObservableProperty] private string _engine = "";
     [ObservableProperty] private string _addByUrl = "";
+    [ObservableProperty] private string _tagDraft = "";
+    [ObservableProperty] private LibraryChoice? _tagMode;
     [ObservableProperty] private int _page = 1;
     [ObservableProperty] private string? _error;
     [ObservableProperty] private string? _status;
     [ObservableProperty] private bool _busy;
+    [ObservableProperty] private bool _hasIncludeTags;
 
     public string[] Engines { get; } = ["", "Ren'Py", "Unity", "HTML", "RPGM", "VN", "Other"];
 
@@ -858,6 +986,58 @@ public partial class BrowseViewModel : ViewModelBase
     {
         if (_loaded && Results.Count > 0) return;
         await SearchAsync();
+    }
+
+    public void ApplyIncludeTag(string tag)
+    {
+        var clean = tag.Trim();
+        if (string.IsNullOrEmpty(clean) || clean.All(char.IsDigit)) return;
+        IncludeTags.Clear();
+        ExcludeTags.Clear();
+        IncludeTags.Add(clean);
+        HasIncludeTags = true;
+        Page = 1;
+        _ = SearchAsync();
+    }
+
+    [RelayCommand]
+    private void AddIncludeTag()
+    {
+        var t = TagDraft.Trim();
+        if (string.IsNullOrEmpty(t) || t.All(char.IsDigit) || IncludeTags.Count >= 10) return;
+        if (IncludeTags.Any(x => string.Equals(x, t, StringComparison.OrdinalIgnoreCase))) return;
+        IncludeTags.Add(t);
+        TagDraft = "";
+        HasIncludeTags = true;
+        Page = 1;
+        _ = SearchAsync();
+    }
+
+    [RelayCommand]
+    private void RemoveIncludeTag(string? tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag)) return;
+        var hit = IncludeTags.FirstOrDefault(x => string.Equals(x, tag, StringComparison.OrdinalIgnoreCase));
+        if (hit is not null) IncludeTags.Remove(hit);
+        HasIncludeTags = IncludeTags.Count > 0;
+        Page = 1;
+        _ = SearchAsync();
+    }
+
+    [RelayCommand]
+    private void ClearIncludeTags()
+    {
+        IncludeTags.Clear();
+        HasIncludeTags = false;
+        Page = 1;
+        _ = SearchAsync();
+    }
+
+    partial void OnTagModeChanged(LibraryChoice? value)
+    {
+        if (!_loaded || value is null) return;
+        Page = 1;
+        _ = SearchAsync();
     }
 
     [RelayCommand]
@@ -879,6 +1059,9 @@ public partial class BrowseViewModel : ViewModelBase
                 page: Page,
                 sort: Sort,
                 dateDays: dateDays > 0 ? dateDays : null,
+                tags: IncludeTags.Count > 0 ? string.Join(",", IncludeTags) : null,
+                notags: ExcludeTags.Count > 0 ? string.Join(",", ExcludeTags) : null,
+                tagMode: TagMode?.Value ?? "and",
                 prefixes: string.IsNullOrWhiteSpace(Engine) || Engine == "Other" ? null : Engine);
             await RefreshLibraryThreadIdsAsync();
             Results.Clear();
@@ -889,9 +1072,10 @@ public partial class BrowseViewModel : ViewModelBase
                 _ = LoadCoverAsync(item);
             }
             _loaded = true;
+            var tagHint = IncludeTags.Count > 0 ? $" · tags: {string.Join(", ", IncludeTags)}" : "";
             Status = Results.Count == 0
                 ? "No catalog results. Check F95 login on the hub, or try another search."
-                : $"Page {Page} · {Results.Count} results";
+                : $"Page {Page} · {Results.Count} results{tagHint}";
         }
         catch (Exception ex) { Error = ex.Message; _toasts.Error(ex.Message); }
         finally { Busy = false; }
@@ -1579,14 +1763,16 @@ public partial class GameDetailViewModel : ViewModelBase
     private readonly ToastService _toasts;
     private readonly Action _back;
     private readonly Action _goDownloads;
+    private readonly Func<string, Task> _onTagClick;
 
-    public GameDetailViewModel(AfterglowAppService app, MediaCacheService media, Action back, Action goDownloads, ToastService toasts)
+    public GameDetailViewModel(AfterglowAppService app, MediaCacheService media, Action back, Action goDownloads, ToastService toasts, Func<string, Task> onTagClick)
     {
         _app = app;
         _media = media;
         _back = back;
         _goDownloads = goDownloads;
         _toasts = toasts;
+        _onTagClick = onTagClick;
         foreach (var (value, label) in new[]
                  {
                      ("unplayed", "Unplayed"), ("playing", "Playing"),
@@ -1604,6 +1790,7 @@ public partial class GameDetailViewModel : ViewModelBase
     [ObservableProperty] private string _title = "";
     [ObservableProperty] private string _meta = "";
     [ObservableProperty] private string? _description;
+    [ObservableProperty] private List<string> _tags = [];
     [ObservableProperty] private bool _isInstalled;
     [ObservableProperty] private string? _installPath;
     [ObservableProperty] private string? _archivePath;
@@ -1690,6 +1877,7 @@ public partial class GameDetailViewModel : ViewModelBase
             LibraryPaths.FormatPlaytime(detail.Game.PlaytimeSeconds)
         }.Where(x => !string.IsNullOrWhiteSpace(x)));
         Description = detail.Game.Description;
+        Tags = TagHelpers.HumanTags(detail.Game.Tags);
         F95Url = detail.Game.F95Url;
         PlayStatus = NormalizePlayStatus(detail.Game.PlayStatus);
         UserRating = detail.Game.UserRating is > 0 ? detail.Game.UserRating : null;
@@ -1890,6 +2078,13 @@ public partial class GameDetailViewModel : ViewModelBase
 
     [RelayCommand]
     private void Back() => _back();
+
+    [RelayCommand]
+    private async Task TagClickAsync(string? tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag)) return;
+        await _onTagClick(tag);
+    }
 
     [RelayCommand]
     private void OpenF95()

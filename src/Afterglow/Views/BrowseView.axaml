@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Afterglow.ViewModels"
+             xmlns:ctrl="using:Afterglow.Controls"
              x:Class="Afterglow.Views.BrowseView"
              x:DataType="vm:BrowseViewModel">
   <DockPanel Margin="4">
@@ -13,6 +14,34 @@
           <ComboBox Grid.Column="3" Width="120" ItemsSource="{Binding Engines}" SelectedItem="{Binding Engine}" />
           <Button Grid.Column="4" Classes="accent" Content="Search" Command="{Binding SearchCommand}" IsEnabled="{Binding !Busy}" />
         </Grid>
+
+        <StackPanel Spacing="6">
+          <TextBlock Text="Tags" Classes="field-label" Margin="0" />
+          <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+            <TextBox PlaceholderText="Add include tag…" Text="{Binding TagDraft}" />
+            <Button Grid.Column="1" Classes="ghost" Content="Add tag" Command="{Binding AddIncludeTagCommand}" />
+            <ComboBox Grid.Column="2" Width="150" ItemsSource="{Binding TagModeOptions}"
+                      SelectedItem="{Binding TagMode}" DisplayMemberBinding="{Binding Label}" />
+            <Button Grid.Column="3" Classes="ghost" Content="Clear tags" Command="{Binding ClearIncludeTagsCommand}"
+                    IsVisible="{Binding HasIncludeTags}" />
+          </Grid>
+          <ItemsControl ItemsSource="{Binding IncludeTags}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="x:String">
+                <Border Classes="tag-filter-chip is-selected"
+                        PointerPressed="IncludeTag_PointerPressed" Tag="{Binding}">
+                  <TextBlock Text="{Binding}" />
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
         <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
           <TextBox PlaceholderText="Add by F95 URL or thread id…" Text="{Binding AddByUrl}" MinWidth="160" />
           <Button Grid.Column="1" Classes="ghost" Content="Add URL" Command="{Binding AddByUrlCommand}" IsEnabled="{Binding !Busy}" />
@@ -34,7 +63,7 @@
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:CatalogItemViewModel">
-            <Border Classes="game-card-host" Width="220" Height="368">
+            <Border Classes="game-card-host" Width="220" Height="400">
               <Border Classes="game-card">
                 <Border Classes="game-card-face">
                   <DockPanel>
@@ -43,6 +72,7 @@
                         <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="2" TextWrapping="Wrap" />
                         <TextBlock Text="{Binding Subtitle}" Classes="caption" TextTrimming="CharacterEllipsis" />
                         <TextBlock Text="{Binding Meta}" Classes="caption" />
+                        <ctrl:TagBadges Tags="{Binding Tags}" Limit="4" Size="sm" Expandable="True" Clickable="False" />
                         <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
                           <Button Classes="accent" Content="{Binding AddButtonLabel}"
                                   Command="{Binding $parent[UserControl].((vm:BrowseViewModel)DataContext).AddCommand}"

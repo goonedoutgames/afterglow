@@ -66,13 +66,24 @@ public sealed class HubApiClient : IDisposable
         string? playStatus = null,
         string? sort = null,
         string? platforms = null,
+        string? tags = null,
         CancellationToken cancellationToken = default) =>
         SendAsync<object, List<GameSummary>>(HttpMethod.Get, WithQuery(
             "api/v1/library",
             ("search", query),
             ("play_status", playStatus),
             ("sort", sort),
-            ("platforms", platforms)), null, cancellationToken);
+            ("platforms", platforms),
+            ("tags", tags)), null, cancellationToken);
+
+    public Task<List<LibraryTag>> GetLibraryTagsAsync(CancellationToken cancellationToken = default) =>
+        SendAsync<object, List<LibraryTag>>(HttpMethod.Get, "api/v1/library/tags", null, cancellationToken);
+
+    public Task<List<CatalogTag>> GetCatalogTagsAsync(string? query = null, int limit = 200, CancellationToken cancellationToken = default) =>
+        SendAsync<object, List<CatalogTag>>(HttpMethod.Get, WithQuery(
+            "api/v1/catalog/tags",
+            ("q", query),
+            ("limit", limit.ToString())), null, cancellationToken);
 
     public Task<GameDetail> GetGameAsync(long gameId, CancellationToken cancellationToken = default) =>
         SendAsync<object, GameDetail>(HttpMethod.Get, $"api/v1/games/{gameId}", null, cancellationToken);

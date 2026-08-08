@@ -89,6 +89,18 @@ public sealed class F95SearchResult
     public string Date { get; set; } = "";
 }
 
+public sealed class LibraryTag
+{
+    public string Tag { get; set; } = "";
+    public long Count { get; set; }
+}
+
+public sealed class CatalogTag
+{
+    public long Id { get; set; }
+    public string Name { get; set; } = "";
+}
+
 public sealed class SettingsView
 {
     public string DataDir { get; set; } = "";

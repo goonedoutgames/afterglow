@@ -1,6 +1,5 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:ctrl="using:Afterglow.Controls">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <Style Selector="Window">
     <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
     <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI, IBM Plex Sans, sans-serif" />
@@ -181,8 +180,6 @@
   </Style>
   <Style Selector="ScrollViewer">
     <Setter Property="Background" Value="Transparent" />
-    <Setter Property="IsScrollInertiaEnabled" Value="True" />
-    <Setter Property="ctrl:SmoothScroll.IsEnabled" Value="True" />
   </Style>
 
   <!--
@@ -243,6 +240,70 @@
   <Style Selector="Border.status-badge.installed-chip">
     <Setter Property="Background" Value="#AA3D9CF0" />
     <Setter Property="BorderBrush" Value="#CC3D9CF0" />
+  </Style>
+
+  <!-- Tag badges (web parity) -->
+  <Style Selector="Border.tag-badge">
+    <Setter Property="CornerRadius" Value="999" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="{DynamicResource GlassHighlightBrush}" />
+    <Setter Property="Background" Value="#33182028" />
+    <Setter Property="Padding" Value="7,3" />
+  </Style>
+  <Style Selector="Border.tag-badge TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+    <Setter Property="FontSize" Value="10" />
+    <Setter Property="LineHeight" Value="14" />
+  </Style>
+  <Style Selector="Border.tag-badge.tag-sm">
+    <Setter Property="Padding" Value="6,2" />
+  </Style>
+  <Style Selector="Border.tag-badge.tag-sm TextBlock">
+    <Setter Property="FontSize" Value="10" />
+  </Style>
+  <Style Selector="Border.tag-badge.tag-md">
+    <Setter Property="Padding" Value="9,4" />
+  </Style>
+  <Style Selector="Border.tag-badge.tag-md TextBlock">
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+  <Style Selector="Border.tag-badge.tag-clickable TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+  </Style>
+  <Style Selector="Border.tag-badge.tag-clickable:pointerover">
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentGlowBrush}" />
+  </Style>
+  <Style Selector="Border.tag-badge.tag-clickable:pointerover TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+  </Style>
+  <Style Selector="Border.tag-badge.tag-more">
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentGlowBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Background" Value="#223D9CF0" />
+  </Style>
+  <Style Selector="Border.tag-badge.tag-more TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+  </Style>
+  <Style Selector="Border.tag-filter-chip">
+    <Setter Property="CornerRadius" Value="999" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="{DynamicResource GlassHighlightBrush}" />
+    <Setter Property="Background" Value="#22182028" />
+    <Setter Property="Padding" Value="10,5" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Margin" Value="0,0,6,6" />
+  </Style>
+  <Style Selector="Border.tag-filter-chip TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+  <Style Selector="Border.tag-filter-chip.is-selected">
+    <Setter Property="Background" Value="#553D9CF0" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentGlowBrush}" />
+  </Style>
+  <Style Selector="Border.tag-filter-chip.is-selected TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
   </Style>
   <Style Selector="Button.status-pill">
     <Setter Property="CornerRadius" Value="999" />
