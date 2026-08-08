@@ -4,7 +4,7 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <ApplicationIcon>Assets\avalonia-logo.ico</ApplicationIcon>
+    <ApplicationIcon>Assets\afterglow.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Magick.NET advisory noise; used only to decode hub/F95 cover bytes we already store. -->
     <NoWarn>$(NoWarn);NU1901;NU1902;NU1903</NoWarn>
@@ -13,9 +13,9 @@
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
     <AvaloniaResource Include="Themes\**" />
-    <Content Include="Assets\avalonia-logo.ico">
+    <Content Include="Assets\afterglow.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>Assets\avalonia-logo.ico</TargetPath>
+      <TargetPath>Assets\afterglow.ico</TargetPath>
     </Content>
     <Content Include="sidecar\**" Condition="Exists('sidecar')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

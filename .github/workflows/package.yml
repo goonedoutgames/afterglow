@@ -29,9 +29,20 @@ jobs:
     runs-on: windows-latest
     outputs:
       hub_tag: ${{ steps.hub.outputs.tag }}
+      app_version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve app version
+        id: version
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}"
+          if ($v -match '^v(.+)$') { $v = $Matches[1] }
+          elseif ($v -eq "main" -or $v -like "refs/*") { $v = "0.0.0-ci.${{ github.run_number }}" }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "AppVersion=$v"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -99,16 +110,36 @@ jobs:
           Built at    : $(Get-Date -Format o)
           "@ | Set-Content publish/windows/sidecar/SIDECAR.txt
 
-      - name: Zip Windows package
+      - name: Zip portable package
         shell: pwsh
         run: |
-          Compress-Archive -Path publish/windows/* -DestinationPath Afterglow-windows-x64.zip -Force
+          Compress-Archive -Path publish/windows/* -DestinationPath publish/Afterglow-windows-x64.zip -Force
 
-      - name: Upload Windows artifact
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            throw "ISCC.exe not found after Inno Setup install"
+          }
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          ./packaging/build-installer.ps1 `
+            -SourceDir publish/windows `
+            -OutputDir publish `
+            -AppVersion "${{ steps.version.outputs.version }}" `
+            -IconFile src/Afterglow/Assets/afterglow.ico `
+            -InnoCompiler "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Afterglow-windows-x64
-          path: Afterglow-windows-x64.zip
+          path: |
+            publish/Afterglow-windows-x64.zip
+            publish/Afterglow-Setup-x64.exe
           if-no-files-found: error
 
   release:
@@ -116,7 +147,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - name: Download Windows artifact
+      - name: Download Windows artifacts
         uses: actions/download-artifact@v4
         with:
           name: Afterglow-windows-x64
@@ -125,11 +156,18 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: |
+            dist/Afterglow-windows-x64.zip
+            dist/Afterglow-Setup-x64.exe
           generate_release_notes: true
+          fail_on_unmatched_files: true
           body: |
             ## Afterglow desktop (Windows)
 
-            `Afterglow-windows-x64.zip` — includes Afterglow Browser (WebView2) and the Windows hub sidecar when available.
+            - **Portable:** `Afterglow-windows-x64.zip` — extract and run `Afterglow.exe`
+            - **Installer:** `Afterglow-Setup-x64.exe` — Start Menu / optional desktop shortcut / uninstall
+
+            Requires the [.NET 8 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0).
+            Includes Afterglow Browser (WebView2) and the Windows hub sidecar when available.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -125,9 +125,9 @@ internal sealed class AfterglowBrowserForm : Form
         {
             var candidates = new[]
             {
-                Path.Combine(AppContext.BaseDirectory, "Assets", "avalonia-logo.ico"),
-                Path.Combine(AppContext.BaseDirectory, "avalonia-logo.ico"),
-                Path.Combine(AppPaths.Root, "..", "Assets", "avalonia-logo.ico")
+                Path.Combine(AppContext.BaseDirectory, "Assets", "afterglow.ico"),
+                Path.Combine(AppContext.BaseDirectory, "afterglow.ico"),
+                Path.Combine(AppPaths.Root, "..", "Assets", "afterglow.ico")
             };
             foreach (var path in candidates)
             {

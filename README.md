@@ -73,9 +73,11 @@ See [packaging/README.md](packaging/README.md).
 
 ```powershell
 ./packaging/publish-windows.ps1
+# optional installer (needs Inno Setup 6):
+./packaging/build-installer.ps1 -AppVersion 0.1.2
 ```
 
-CI (`.github/workflows/package.yml`) publishes a Windows zip; tag `v*` creates a GitHub Release.
+CI (`.github/workflows/package.yml`) publishes a portable zip and a Setup.exe; tag `v*` creates a GitHub Release with both.
 
 ## MVP download hosts
 

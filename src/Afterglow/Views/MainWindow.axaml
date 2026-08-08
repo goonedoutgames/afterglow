@@ -6,7 +6,7 @@
         x:Class="Afterglow.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="Afterglow"
-        Icon="/Assets/avalonia-logo.ico"
+        Icon="/Assets/afterglow.ico"
         Width="1360" Height="860"
         MinWidth="1000" MinHeight="640"
         CanResize="True"
