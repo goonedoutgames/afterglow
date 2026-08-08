@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using Afterglow.Core.Models;
 using Afterglow.HubClient;
 using Afterglow.LocalStore;
@@ -59,13 +60,13 @@ public sealed class PlaytimeSyncService(LocalDatabase database, HubApiClient hub
 
 public sealed class RenpySaveSync(HubApiClient hubClient)
 {
-    /// <summary>Uploads the newest manual save found under Ren'Py game/saves (skips auto-*).</summary>
+    /// <summary>Uploads the newest Ren'Py slot save (e.g. 1-1-LT1.save); skips auto_/backup_.</summary>
     public async Task<GameSave?> UploadNewestAsync(long gameId, string installPath, CancellationToken cancellationToken = default)
     {
         var file = FindNewestSave(installPath);
         if (file is null) return null;
-        var extension = Path.GetExtension(file);
-        var name = $"backup_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmss}{extension}";
+        // Keep the real slot name so sync round-trips overwrite the same file.
+        var name = Path.GetFileName(file);
         return await hubClient.UploadSaveAsync(gameId, file, name, cancellationToken);
     }
 
@@ -146,7 +147,7 @@ public sealed class RenpySaveSync(HubApiClient hubClient)
             if (!Directory.Exists(dir)) return;
             try
             {
-                candidates.AddRange(Directory.EnumerateFiles(dir, "*", depth).Where(IsManualSave));
+                candidates.AddRange(Directory.EnumerateFiles(dir, "*", depth).Where(IsRenpySlotSave));
             }
             catch { /* ignore locked dirs */ }
         }
@@ -233,7 +234,7 @@ public sealed class RenpySaveSync(HubApiClient hubClient)
     {
         try
         {
-            return Directory.EnumerateFiles(dir, "*.*", SearchOption.TopDirectoryOnly).Any(IsManualSave);
+            return Directory.EnumerateFiles(dir, "*.*", SearchOption.TopDirectoryOnly).Any(IsRenpySlotSave);
         }
         catch { return false; }
     }
@@ -244,7 +245,7 @@ public sealed class RenpySaveSync(HubApiClient hubClient)
         return new string(name.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
     }
 
-    /// <summary>Ren'Py autosaves are typically auto-1-….save / auto_….save — skip those.</summary>
+    /// <summary>Ren'Py autosaves: auto-1-….save / auto_….save</summary>
     public static bool IsAutoSaveName(string? fileName)
     {
         if (string.IsNullOrWhiteSpace(fileName)) return false;
@@ -253,25 +254,28 @@ public sealed class RenpySaveSync(HubApiClient hubClient)
                || name.StartsWith("auto_", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsManualSave(string path)
+    /// <summary>Afterglow/cloud backup uploads: backup_….save</summary>
+    public static bool IsBackupSaveName(string? fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName)) return false;
+        var name = Path.GetFileName(fileName);
+        return name.StartsWith("backup_", StringComparison.OrdinalIgnoreCase)
+               || name.StartsWith("backup-", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Manual Ren'Py slot saves look like <c>1-1-LT1.save</c> (page-slot-LT#).
+    /// Ignores autosaves, backup_ uploads, and other junk under game/saves.
+    /// </summary>
+    public static bool IsRenpySlotSave(string path)
     {
         var name = Path.GetFileName(path);
         if (string.IsNullOrWhiteSpace(name) || name.StartsWith('.')) return false;
-        if (IsAutoSaveName(name)) return false;
-
-        var lower = name.ToLowerInvariant();
-        if (lower is "script_version.txt" or "project.json" or "android.json") return false;
-        if (lower.EndsWith(".rpy") || lower.EndsWith(".rpyc") || lower.EndsWith(".py")) return false;
-
-        var ext = Path.GetExtension(name).ToLowerInvariant();
-        if (ext is ".save" or ".sav") return true;
-        if (ext is ".json" or ".dat" or ".bin")
-        {
-            return lower.Contains("save", StringComparison.Ordinal)
-                   || lower.Contains("persistent", StringComparison.Ordinal)
-                   || char.IsDigit(lower[0]);
-        }
-        return lower.Contains("save", StringComparison.OrdinalIgnoreCase)
-               || lower.Contains("persistent", StringComparison.OrdinalIgnoreCase);
+        if (IsAutoSaveName(name) || IsBackupSaveName(name)) return false;
+        return RenpySlotSaveRegex.IsMatch(name);
     }
+
+    private static readonly Regex RenpySlotSaveRegex = new(
+        @"^\d+-\d+-LT\d+\.save$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 }

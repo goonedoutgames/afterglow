@@ -21,84 +21,42 @@
     <StackPanel Spacing="16" Margin="8">
       <Button Classes="ghost" Content="← Back to library" Command="{Binding BackCommand}" HorizontalAlignment="Left" />
 
-      <Grid ColumnDefinitions="220,*" ColumnSpacing="20">
-        <Border Width="220" Height="320" CornerRadius="12" ClipToBounds="True" Classes="cover-fallback"
-                VerticalAlignment="Top">
-          <ctrl:AnimatedImageView Media="{Binding CoverAnimation}"
-                                  FallbackSource="{Binding Cover}"
-                                  Stretch="UniformToFill"
-                                  IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
-        </Border>
-        <StackPanel Grid.Column="1" Spacing="10">
-          <TextBlock Text="{Binding Title}" Classes="title" TextWrapping="Wrap" />
-          <TextBlock Text="{Binding Meta}" Classes="muted" />
-          <Border Classes="status-badge" HorizontalAlignment="Left"
-                  Background="{Binding PlayStatusBadgeBrush}" BorderBrush="{Binding PlayStatusBadgeBorder}">
-            <TextBlock Text="{Binding PlayStatusBadgeLabel}" FontSize="12" FontWeight="SemiBold" Foreground="White" />
+      <!-- Left: cover + tracking · Right: info / actions (fills empty space) -->
+      <Grid ColumnDefinitions="280,*" ColumnSpacing="20">
+        <StackPanel Spacing="12" VerticalAlignment="Top">
+          <Border Width="280" Height="408" CornerRadius="14" ClipToBounds="True" Classes="cover-fallback"
+                  HorizontalAlignment="Left">
+            <ctrl:AnimatedImageView Media="{Binding CoverAnimation}"
+                                    FallbackSource="{Binding Cover}"
+                                    Stretch="UniformToFill"
+                                    IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
           </Border>
 
-          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-            <TextBlock Text="F95" Classes="star-label" VerticalAlignment="Center" />
-            <ItemsControl ItemsSource="{Binding F95Stars}">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <StackPanel Orientation="Horizontal" Spacing="2" />
-                </ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:StarSlotViewModel">
-                  <Panel Width="28" Height="28">
-                    <TextBlock Text="★" FontSize="24" Width="28" Height="28"
-                               Foreground="#55FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top"
-                               TextAlignment="Center" />
-                    <Border Width="{Binding FillWidth}" Height="28" HorizontalAlignment="Left" ClipToBounds="True">
-                      <TextBlock Text="★" FontSize="24" Width="28" Height="28"
-                                 Foreground="#F5C542" HorizontalAlignment="Left" VerticalAlignment="Top"
-                                 TextAlignment="Center" />
-                    </Border>
-                  </Panel>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <TextBlock Text="{Binding F95RatingText}" Classes="caption" VerticalAlignment="Center" MinWidth="28" />
-          </StackPanel>
-
-          <TextBlock Text="{Binding Description}" TextWrapping="Wrap" MaxHeight="180" TextTrimming="WordEllipsis" />
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Classes="accent" Content="Play" Command="{Binding PlayCommand}" IsEnabled="{Binding IsInstalled}" />
-            <Button Classes="ghost" Content="Refresh metadata" Command="{Binding RefreshCommand}" />
-            <Button Classes="ghost" Content="Check version" Command="{Binding CheckVersionCommand}" />
-            <Button Classes="ghost" Content="Open F95 thread" Command="{Binding OpenF95Command}"
-                    IsVisible="{Binding F95Url, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-            <Button Classes="ghost" Content="Uninstall" Command="{Binding UninstallLocalCommand}" IsEnabled="{Binding IsInstalled}" />
-            <Button Classes="ghost" Content="Remove from library" Command="{Binding DeleteFromLibraryCommand}" />
-          </StackPanel>
-
-          <Border Classes="glass" Padding="12" Margin="0,8,0,0">
+          <Border Classes="glass" Padding="12">
             <StackPanel Spacing="10">
-              <StackPanel Spacing="4">
+              <StackPanel Spacing="2">
                 <TextBlock Text="Your tracking" FontWeight="SemiBold" />
-                <TextBlock Classes="caption" Text="Status, your rating, and notes for this game." />
+                <TextBlock Classes="caption" Text="Status, rating, and notes." TextWrapping="Wrap" />
               </StackPanel>
 
-              <StackPanel Spacing="6">
-                <TextBlock Classes="field-label" Text="Your rating" />
-                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <StackPanel Spacing="4">
+                <TextBlock Classes="field-label" Text="Your rating" Margin="0" />
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                   <ItemsControl ItemsSource="{Binding YourStars}">
                     <ItemsControl.ItemsPanel>
                       <ItemsPanelTemplate>
-                        <StackPanel Orientation="Horizontal" Spacing="2" />
+                        <StackPanel Orientation="Horizontal" Spacing="1" />
                       </ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                       <DataTemplate x:DataType="vm:StarSlotViewModel">
-                        <Panel Width="28" Height="28">
-                          <TextBlock Text="★" FontSize="24" Width="28" Height="28"
+                        <Panel Width="24" Height="24">
+                          <TextBlock Text="★" FontSize="20" Width="24" Height="24"
                                      Foreground="#55FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top"
                                      TextAlignment="Center" IsHitTestVisible="False" />
-                          <Border Width="{Binding FillWidth}" Height="28" HorizontalAlignment="Left" ClipToBounds="True"
+                          <Border Width="{Binding FillWidth}" Height="24" HorizontalAlignment="Left" ClipToBounds="True"
                                   IsHitTestVisible="False">
-                            <TextBlock Text="★" FontSize="24" Width="28" Height="28"
+                            <TextBlock Text="★" FontSize="20" Width="24" Height="24"
                                        Foreground="#F5C542" HorizontalAlignment="Left" VerticalAlignment="Top"
                                        TextAlignment="Center" />
                           </Border>
@@ -122,12 +80,12 @@
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
-                  <TextBlock Text="{Binding UserRatingText}" Classes="caption" VerticalAlignment="Center" MinWidth="28" />
+                  <TextBlock Text="{Binding UserRatingText}" Classes="caption" VerticalAlignment="Center" MinWidth="24" />
                 </StackPanel>
               </StackPanel>
 
-              <StackPanel Spacing="6">
-                <TextBlock Classes="field-label" Text="Play status" />
+              <StackPanel Spacing="4">
+                <TextBlock Classes="field-label" Text="Play status" Margin="0" />
                 <ItemsControl ItemsSource="{Binding StatusPills}">
                   <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -136,7 +94,7 @@
                   </ItemsControl.ItemsPanel>
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:PlayStatusPillViewModel">
-                      <Button Classes="status-pill" Margin="0,0,8,8"
+                      <Button Classes="status-pill" Margin="0,0,6,6" Padding="10,6" FontSize="12"
                               Content="{Binding Label}"
                               Classes.is-active="{Binding IsActive}"
                               Background="{Binding PillBrush}"
@@ -150,11 +108,60 @@
                 </ItemsControl>
               </StackPanel>
 
-              <TextBlock Classes="field-label" Text="Notes" />
-              <TextBox Text="{Binding UserNotes}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72" IsEnabled="{Binding !Busy}" />
-              <Button Classes="accent" Content="Save notes" Command="{Binding SaveNotesCommand}" HorizontalAlignment="Left" IsEnabled="{Binding !Busy}" />
+              <TextBlock Classes="field-label" Text="Notes" Margin="0" />
+              <TextBox Text="{Binding UserNotes}" AcceptsReturn="True" TextWrapping="Wrap"
+                       MinHeight="88" IsEnabled="{Binding !Busy}" />
+              <Button Classes="accent" Content="Save notes" Command="{Binding SaveNotesCommand}"
+                      HorizontalAlignment="Stretch" IsEnabled="{Binding !Busy}" />
             </StackPanel>
           </Border>
+        </StackPanel>
+
+        <StackPanel Grid.Column="1" Spacing="12">
+          <TextBlock Text="{Binding Title}" Classes="title" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding Meta}" Classes="muted" />
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <Border Classes="status-badge" VerticalAlignment="Center"
+                    Background="{Binding PlayStatusBadgeBrush}" BorderBrush="{Binding PlayStatusBadgeBorder}">
+              <TextBlock Text="{Binding PlayStatusBadgeLabel}" FontSize="12" FontWeight="SemiBold" Foreground="White" />
+            </Border>
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <TextBlock Text="F95" Classes="star-label" VerticalAlignment="Center" />
+              <ItemsControl ItemsSource="{Binding F95Stars}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal" Spacing="2" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:StarSlotViewModel">
+                    <Panel Width="28" Height="28">
+                      <TextBlock Text="★" FontSize="24" Width="28" Height="28"
+                                 Foreground="#55FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                 TextAlignment="Center" />
+                      <Border Width="{Binding FillWidth}" Height="28" HorizontalAlignment="Left" ClipToBounds="True">
+                        <TextBlock Text="★" FontSize="24" Width="28" Height="28"
+                                   Foreground="#F5C542" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                   TextAlignment="Center" />
+                      </Border>
+                    </Panel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Text="{Binding F95RatingText}" Classes="caption" VerticalAlignment="Center" MinWidth="28" />
+            </StackPanel>
+          </StackPanel>
+
+          <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+          <WrapPanel>
+            <Button Classes="accent" Content="Play" Command="{Binding PlayCommand}" IsEnabled="{Binding IsInstalled}" Margin="0,0,8,8" />
+            <Button Classes="ghost" Content="Refresh metadata" Command="{Binding RefreshCommand}" Margin="0,0,8,8" />
+            <Button Classes="ghost" Content="Check version" Command="{Binding CheckVersionCommand}" Margin="0,0,8,8" />
+            <Button Classes="ghost" Content="Open F95 thread" Command="{Binding OpenF95Command}" Margin="0,0,8,8"
+                    IsVisible="{Binding F95Url, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <Button Classes="ghost" Content="Uninstall" Command="{Binding UninstallLocalCommand}" IsEnabled="{Binding IsInstalled}" Margin="0,0,8,8" />
+            <Button Classes="ghost" Content="Remove from library" Command="{Binding DeleteFromLibraryCommand}" Margin="0,0,8,8" />
+          </WrapPanel>
         </StackPanel>
       </Grid>
 
@@ -220,9 +227,18 @@
 
       <Border Classes="glass">
         <StackPanel Spacing="8">
-          <TextBlock Text="Cloud saves" FontWeight="SemiBold" />
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Text="Cloud saves" FontWeight="SemiBold" />
+              <TextBlock Classes="caption"
+                         Text="Upload a Ren'Py slot save (e.g. 1-1-LT1.save), sync to this PC, or delete from the hub." />
+            </StackPanel>
+            <Button Grid.Column="1" Classes="accent" Content="Upload save"
+                    Command="{Binding UploadSaveCommand}" IsEnabled="{Binding !Busy}"
+                    VerticalAlignment="Center" />
+          </Grid>
           <TextBlock Classes="help"
-                     Text="Click Sync to download a hub save into this game’s Ren'Py saves folder. You’ll be asked before overwriting an existing file." />
+                     Text="Sync downloads a hub save into this game’s Ren'Py game/saves folder. You’ll be asked before overwriting." />
           <ItemsControl ItemsSource="{Binding Saves}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:CloudSaveItemViewModel">
@@ -232,10 +248,16 @@
                       <TextBlock Text="{Binding Filename}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                       <TextBlock Text="{Binding Meta}" Classes="caption" />
                     </StackPanel>
-                    <Button Grid.Column="1" Classes="accent" Content="Sync"
-                            IsEnabled="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).IsInstalled}"
-                            Command="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).SyncSaveCommand}"
-                            CommandParameter="{Binding}" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                      <Button Classes="accent" Content="Sync"
+                              IsEnabled="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).IsInstalled}"
+                              Command="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).SyncSaveCommand}"
+                              CommandParameter="{Binding}" />
+                      <Button Classes="ghost" Content="Delete"
+                              Command="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).DeleteSaveCommand}"
+                              CommandParameter="{Binding}"
+                              IsEnabled="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).Busy, Converter={x:Static BoolConverters.Not}}" />
+                    </StackPanel>
                   </Grid>
                 </Border>
               </DataTemplate>

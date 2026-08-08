@@ -5,73 +5,64 @@
              x:Class="Afterglow.Views.LibraryView"
              x:DataType="vm:LibraryViewModel">
   <DockPanel>
-    <Border DockPanel.Dock="Top" Classes="glass" Padding="14,12" Margin="8,8,8,4" CornerRadius="16">
-      <StackPanel Spacing="12">
-        <!-- Search / actions -->
-        <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
-          <TextBox PlaceholderText="Search library…" Text="{Binding Search}" MinHeight="36" />
-          <Button Grid.Column="1" Classes="accent" Content="Search" Command="{Binding SearchCommand}" MinWidth="88" />
-          <Button Grid.Column="2" Classes="ghost" Content="Check updates" Command="{Binding CheckUpdatesCommand}"
-                  IsEnabled="{Binding !Busy}" />
-          <Button Grid.Column="3" Classes="ghost" Content="Grid" Command="{Binding ToggleViewCommand}"
-                  IsVisible="{Binding !GridView}" MinWidth="72" />
-          <Button Grid.Column="3" Classes="ghost" Content="List" Command="{Binding ToggleViewCommand}"
-                  IsVisible="{Binding GridView}" MinWidth="72" />
-        </Grid>
+    <!-- Right sidebar: search / filters / sort / display -->
+    <Border DockPanel.Dock="Right" Classes="glass" Width="268" Margin="4,8,8,8" Padding="14,14" CornerRadius="16">
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                    ctrl:SmoothScroll.IsEnabled="True">
+        <StackPanel Spacing="14">
+          <TextBlock Text="Library" Classes="field-label" Margin="0" FontSize="15" />
 
-        <!-- Filters (Steam-like) -->
-        <StackPanel Spacing="6">
-          <TextBlock Text="Filters" Classes="field-label" Margin="0" />
-          <StackPanel Orientation="Horizontal" Spacing="10">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-              <TextBlock Text="Status" Classes="caption" VerticalAlignment="Center" MinWidth="48" />
-              <ComboBox Width="150" ItemsSource="{Binding StatusChoices}" SelectedItem="{Binding StatusFilter}"
-                        DisplayMemberBinding="{Binding Label}" />
+          <StackPanel Spacing="6">
+            <TextBox PlaceholderText="Search…" Text="{Binding Search}" MinHeight="36" />
+            <Button Classes="accent" Content="Search" Command="{Binding SearchCommand}" HorizontalAlignment="Stretch" />
+            <Button Classes="ghost" Content="Check updates" Command="{Binding CheckUpdatesCommand}"
+                    IsEnabled="{Binding !Busy}" HorizontalAlignment="Stretch" />
+          </StackPanel>
+
+          <StackPanel Spacing="6">
+            <TextBlock Text="Filters" Classes="field-label" Margin="0" />
+            <TextBlock Text="Status" Classes="caption" />
+            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding StatusChoices}"
+                      SelectedItem="{Binding StatusFilter}" DisplayMemberBinding="{Binding Label}" />
+            <TextBlock Text="Installed" Classes="caption" Margin="0,4,0,0" />
+            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding InstallChoices}"
+                      SelectedItem="{Binding InstallFilter}" DisplayMemberBinding="{Binding Label}"
+                      ToolTip.Tip="Show every hub game, or only titles installed on this PC" />
+          </StackPanel>
+
+          <StackPanel Spacing="6">
+            <TextBlock Text="Sort" Classes="field-label" Margin="0" />
+            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding SortChoices}"
+                      SelectedItem="{Binding SortBy}" DisplayMemberBinding="{Binding Label}" />
+          </StackPanel>
+
+          <Border Classes="glass-chip" Padding="10,10">
+            <StackPanel Spacing="8">
+              <TextBlock Text="Display" Classes="field-label" Margin="0" />
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button Classes="ghost" Content="Grid" Command="{Binding ToggleViewCommand}"
+                        IsVisible="{Binding !GridView}" MinWidth="72" />
+                <Button Classes="ghost" Content="List" Command="{Binding ToggleViewCommand}"
+                        IsVisible="{Binding GridView}" MinWidth="72" />
+              </StackPanel>
+              <StackPanel Spacing="4" IsVisible="{Binding GridView}">
+                <TextBlock Text="Card size" Classes="caption" />
+                <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding CardSizeChoices}"
+                          SelectedItem="{Binding CardSizeChoice}" DisplayMemberBinding="{Binding Label}" />
+              </StackPanel>
             </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="6">
-              <TextBlock Text="Library" Classes="caption" VerticalAlignment="Center" MinWidth="48" />
-              <ComboBox Width="150" ItemsSource="{Binding InstallChoices}" SelectedItem="{Binding InstallFilter}"
-                        DisplayMemberBinding="{Binding Label}"
-                        ToolTip.Tip="Show every hub game, or only titles installed on this PC" />
-            </StackPanel>
-          </StackPanel>
+          </Border>
+
+          <TextBlock Text="{Binding LibraryCountLabel}" Classes="caption" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding MediaStatus}" Classes="caption" TextWrapping="Wrap" Opacity="0.85" />
+          <TextBlock Text="{Binding Error}" Foreground="#E35D6A" TextWrapping="Wrap" />
         </StackPanel>
-
-        <!-- Sort (separate from filters) -->
-        <StackPanel Spacing="6">
-          <TextBlock Text="Sort" Classes="field-label" Margin="0" />
-          <StackPanel Orientation="Horizontal" Spacing="6">
-            <TextBlock Text="By" Classes="caption" VerticalAlignment="Center" MinWidth="48" />
-            <ComboBox Width="180" ItemsSource="{Binding SortChoices}" SelectedItem="{Binding SortBy}"
-                      DisplayMemberBinding="{Binding Label}" />
-          </StackPanel>
-        </StackPanel>
-
-        <!-- Display prefs (unrelated to filters/sort) -->
-        <Border Classes="glass-chip" Padding="10,8" IsVisible="{Binding GridView}">
-          <StackPanel Orientation="Horizontal" Spacing="10">
-            <TextBlock Text="Display" Classes="field-label" Margin="0" VerticalAlignment="Center" />
-            <TextBlock Text="Card size" Classes="caption" VerticalAlignment="Center" />
-            <ComboBox Width="120" ItemsSource="{Binding CardSizeChoices}" SelectedItem="{Binding CardSizeChoice}"
-                      DisplayMemberBinding="{Binding Label}" />
-            <Button Classes="ghost" Content="List view" Command="{Binding ToggleViewCommand}" />
-          </StackPanel>
-        </Border>
-        <Border Classes="glass-chip" Padding="10,8" IsVisible="{Binding !GridView}">
-          <StackPanel Orientation="Horizontal" Spacing="10">
-            <TextBlock Text="Display" Classes="field-label" Margin="0" VerticalAlignment="Center" />
-            <Button Classes="ghost" Content="Grid view" Command="{Binding ToggleViewCommand}" />
-          </StackPanel>
-        </Border>
-
-        <TextBlock Text="{Binding LibraryCountLabel}" Classes="caption" />
-        <TextBlock Text="{Binding MediaStatus}" Classes="caption" TextWrapping="Wrap" />
-        <TextBlock Text="{Binding Error}" Foreground="#E35D6A" TextWrapping="Wrap" />
-      </StackPanel>
+      </ScrollViewer>
     </Border>
 
     <ScrollViewer IsVisible="{Binding GridView}" Padding="6,10,6,18"
-                  HorizontalScrollBarVisibility="Disabled">
+                  HorizontalScrollBarVisibility="Disabled"
+                  ctrl:SmoothScroll.IsEnabled="True">
       <ItemsControl ItemsSource="{Binding Games}">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
@@ -89,28 +80,79 @@
                 <Border Classes="game-card-face">
                   <DockPanel>
                     <Border DockPanel.Dock="Bottom" Classes="game-card-meta" Padding="10,8">
-                      <StackPanel Spacing="3">
+                      <StackPanel Spacing="5">
                         <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                                    FontSize="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).MetaFontSize}" />
                         <TextBlock Text="{Binding Subtitle}" Classes="caption" TextTrimming="CharacterEllipsis"
                                    FontSize="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).MetaFontSize}" />
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                          <TextBlock Text="{Binding PlaytimeLabel}" Classes="caption"
-                                     FontSize="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).MetaFontSize}" />
-                          <TextBlock Text="{Binding PlayStatusLabel}" Classes="caption" Opacity="0.85"
-                                     FontSize="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).MetaFontSize}" />
+
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <Border Classes="status-badge status-sm"
+                                  Background="{Binding StatusBadgeBrush}"
+                                  BorderBrush="{Binding StatusBadgeBorder}">
+                            <TextBlock Text="{Binding PlayStatusLabel}" FontSize="10" FontWeight="SemiBold"
+                                       Foreground="White" />
+                          </Border>
+                          <Border Classes="status-badge status-sm installed-chip"
+                                  IsVisible="{Binding IsInstalled}">
+                            <TextBlock Text="Installed" FontSize="10" FontWeight="SemiBold" Foreground="White" />
+                          </Border>
                         </StackPanel>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                          <TextBlock Text="{Binding UserRatingLabel}" Classes="caption"
-                                     FontSize="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).MetaFontSize}" />
-                          <TextBlock Text="{Binding F95RatingLabel}" Classes="caption" Opacity="0.85"
-                                     FontSize="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).MetaFontSize}" />
-                        </StackPanel>
-                        <Border Background="{DynamicResource AccentBrush}" CornerRadius="6" Padding="6,2"
-                                HorizontalAlignment="Left"
-                                IsVisible="{Binding IsInstalled}" Opacity="0.95">
-                          <TextBlock Text="Installed" FontSize="10" Foreground="White" />
-                        </Border>
+
+                        <TextBlock Text="{Binding PlaytimeLabel}" Classes="caption"
+                                   FontSize="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).MetaFontSize}" />
+
+                        <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" RowSpacing="2" ColumnSpacing="6">
+                          <TextBlock Text="You" Classes="star-label" VerticalAlignment="Center" />
+                          <ItemsControl Grid.Column="1" ItemsSource="{Binding UserStars}" VerticalAlignment="Center">
+                            <ItemsControl.ItemsPanel>
+                              <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="1" />
+                              </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate x:DataType="vm:StarSlotViewModel">
+                                <Panel Width="14" Height="14">
+                                  <TextBlock Text="★" FontSize="12" Width="14" Height="14"
+                                             Foreground="#55FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                             TextAlignment="Center" />
+                                  <Border Width="{Binding FillWidth}" Height="14" HorizontalAlignment="Left" ClipToBounds="True">
+                                    <TextBlock Text="★" FontSize="12" Width="14" Height="14"
+                                               Foreground="#F5C542" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                               TextAlignment="Center" />
+                                  </Border>
+                                </Panel>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                          <TextBlock Grid.Column="2" Text="{Binding UserRatingText}" Classes="caption"
+                                     VerticalAlignment="Center" MinWidth="22" />
+
+                          <TextBlock Grid.Row="1" Text="F95" Classes="star-label" VerticalAlignment="Center" />
+                          <ItemsControl Grid.Row="1" Grid.Column="1" ItemsSource="{Binding F95Stars}" VerticalAlignment="Center">
+                            <ItemsControl.ItemsPanel>
+                              <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="1" />
+                              </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate x:DataType="vm:StarSlotViewModel">
+                                <Panel Width="14" Height="14">
+                                  <TextBlock Text="★" FontSize="12" Width="14" Height="14"
+                                             Foreground="#55FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                             TextAlignment="Center" />
+                                  <Border Width="{Binding FillWidth}" Height="14" HorizontalAlignment="Left" ClipToBounds="True">
+                                    <TextBlock Text="★" FontSize="12" Width="14" Height="14"
+                                               Foreground="#F5C542" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                               TextAlignment="Center" />
+                                  </Border>
+                                </Panel>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                          <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding F95RatingText}" Classes="caption"
+                                     VerticalAlignment="Center" Opacity="0.9" MinWidth="22" />
+                        </Grid>
                       </StackPanel>
                     </Border>
                     <Panel>
@@ -142,19 +184,31 @@
                                         Stretch="UniformToFill"
                                         IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
               </Border>
-              <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="2">
+              <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="4">
                 <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                 <TextBlock Text="{Binding Subtitle}" Classes="muted" FontSize="12" TextTrimming="CharacterEllipsis" />
-                <StackPanel Orientation="Horizontal" Spacing="10">
-                  <TextBlock Text="{Binding PlaytimeLabel}" Classes="caption" FontSize="12" />
-                  <TextBlock Text="{Binding PlayStatusLabel}" Classes="caption" FontSize="12" />
-                  <TextBlock Text="{Binding UserRatingLabel}" Classes="caption" FontSize="12" />
-                  <TextBlock Text="{Binding F95RatingLabel}" Classes="caption" FontSize="12" Opacity="0.85" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Border Classes="status-badge status-sm"
+                          Background="{Binding StatusBadgeBrush}"
+                          BorderBrush="{Binding StatusBadgeBorder}">
+                    <TextBlock Text="{Binding PlayStatusLabel}" FontSize="10" FontWeight="SemiBold" Foreground="White" />
+                  </Border>
+                  <TextBlock Text="{Binding PlaytimeLabel}" Classes="caption" FontSize="12" VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="You" Classes="star-label" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding UserRatingText}" Classes="caption" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="F95" Classes="star-label" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding F95RatingText}" Classes="caption" VerticalAlignment="Center" Opacity="0.9" />
+                  </StackPanel>
                 </StackPanel>
               </StackPanel>
-              <Border Grid.Column="2" Background="{DynamicResource AccentBrush}" CornerRadius="6" Padding="8,4"
-                      IsVisible="{Binding IsInstalled}" VerticalAlignment="Center" Opacity="0.9">
-                <TextBlock Text="Installed" FontSize="11" Foreground="White" />
+              <Border Grid.Column="2" Classes="status-badge status-sm installed-chip"
+                      IsVisible="{Binding IsInstalled}" VerticalAlignment="Center">
+                <TextBlock Text="Installed" FontSize="11" FontWeight="SemiBold" Foreground="White" />
               </Border>
             </Grid>
           </Border>

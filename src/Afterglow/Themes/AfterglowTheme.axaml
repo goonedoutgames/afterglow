@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ctrl="using:Afterglow.Controls">
   <Style Selector="Window">
     <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
     <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI, IBM Plex Sans, sans-serif" />
@@ -180,6 +181,8 @@
   </Style>
   <Style Selector="ScrollViewer">
     <Setter Property="Background" Value="Transparent" />
+    <Setter Property="IsScrollInertiaEnabled" Value="True" />
+    <Setter Property="ctrl:SmoothScroll.IsEnabled" Value="True" />
   </Style>
 
   <!--
@@ -233,6 +236,13 @@
     <Setter Property="Background" Value="#663A4658" />
     <Setter Property="BorderBrush" Value="#885A6A7E" />
     <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Border.status-badge.status-sm">
+    <Setter Property="Padding" Value="8,2" />
+  </Style>
+  <Style Selector="Border.status-badge.installed-chip">
+    <Setter Property="Background" Value="#AA3D9CF0" />
+    <Setter Property="BorderBrush" Value="#CC3D9CF0" />
   </Style>
   <Style Selector="Button.status-pill">
     <Setter Property="CornerRadius" Value="999" />

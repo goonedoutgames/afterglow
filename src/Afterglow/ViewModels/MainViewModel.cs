@@ -445,12 +445,18 @@ public partial class LibraryItemViewModel : ViewModelBase
     public string PlaytimeLabel { get; init; } = "";
     public string PlayStatusValue { get; init; } = "unplayed";
     public string PlayStatusLabel { get; init; } = "";
+    public IBrush StatusBadgeBrush { get; init; } = PlayStatusPalette.Fill("unplayed");
+    public IBrush StatusBadgeBorder { get; init; } = PlayStatusPalette.Border("unplayed");
     public string UserRatingLabel { get; init; } = "";
     public string F95RatingLabel { get; init; } = "";
     public double? UserRating { get; init; }
     public double? F95Rating { get; init; }
     public bool HasUserRating { get; init; }
     public bool HasF95Rating { get; init; }
+    public string UserRatingText => HasUserRating ? $"{UserRating:0.0}" : "—";
+    public string F95RatingText => HasF95Rating ? $"{F95Rating:0.0}" : "—";
+    public IReadOnlyList<StarSlotViewModel> UserStars { get; init; } = [];
+    public IReadOnlyList<StarSlotViewModel> F95Stars { get; init; } = [];
     public string? CoverUrl { get; init; }
     public List<string> ImageCandidates { get; init; } = [];
     [ObservableProperty] private Bitmap? _cover;
@@ -586,7 +592,7 @@ public partial class LibraryViewModel : ViewModelBase
     [ObservableProperty] private LibraryItemViewModel? _selectedGame;
     [ObservableProperty] private string _libraryCountLabel = "";
     [ObservableProperty] private double _cardWidth = 200;
-    [ObservableProperty] private double _cardHeight = 348;
+    [ObservableProperty] private double _cardHeight = 400;
     [ObservableProperty] private double _metaFontSize = 12;
 
     public async Task RefreshAsync()
@@ -612,17 +618,10 @@ public partial class LibraryViewModel : ViewModelBase
                 var candidates = new List<string>();
                 if (!string.IsNullOrWhiteSpace(g.CoverUrl)) candidates.Add(g.CoverUrl);
                 candidates.AddRange(g.PreviewUrls.Where(x => !string.IsNullOrWhiteSpace(x)));
-                var playStatus = (g.Game.PlayStatus ?? "unplayed").Trim().ToLowerInvariant();
-                if (playStatus is "on-hold") playStatus = "on_hold";
-                var playStatusLabel = playStatus switch
-                {
-                    "playing" => "Playing",
-                    "completed" => "Completed",
-                    "dropped" => "Dropped",
-                    "on_hold" => "On hold",
-                    "unplayed" => "Unplayed",
-                    _ => string.IsNullOrWhiteSpace(playStatus) ? "Unplayed" : playStatus
-                };
+                var playStatus = PlayStatusPalette.Normalize(g.Game.PlayStatus);
+                var playStatusLabel = PlayStatusPalette.Label(playStatus);
+                var userRating = g.Game.UserRating;
+                var f95Rating = g.Game.Rating;
                 var item = new LibraryItemViewModel
                 {
                     Id = g.Game.Id,
@@ -633,12 +632,16 @@ public partial class LibraryViewModel : ViewModelBase
                     PlaytimeLabel = LibraryPaths.FormatPlaytime(g.Game.PlaytimeSeconds),
                     PlayStatusValue = playStatus,
                     PlayStatusLabel = playStatusLabel,
-                    UserRating = g.Game.UserRating,
-                    F95Rating = g.Game.Rating,
-                    HasUserRating = g.Game.UserRating is > 0,
-                    UserRatingLabel = g.Game.UserRating is > 0 ? $"You ★ {g.Game.UserRating:0.0}" : "You —",
-                    HasF95Rating = g.Game.Rating is > 0,
-                    F95RatingLabel = g.Game.Rating is > 0 ? $"F95 ★ {g.Game.Rating:0.0}" : "F95 —",
+                    StatusBadgeBrush = PlayStatusPalette.Fill(playStatus),
+                    StatusBadgeBorder = PlayStatusPalette.Border(playStatus),
+                    UserRating = userRating,
+                    F95Rating = f95Rating,
+                    HasUserRating = userRating is > 0,
+                    UserRatingLabel = userRating is > 0 ? $"You ★ {userRating:0.0}" : "You —",
+                    HasF95Rating = f95Rating is > 0,
+                    F95RatingLabel = f95Rating is > 0 ? $"F95 ★ {f95Rating:0.0}" : "F95 —",
+                    UserStars = BuildCompactStars(userRating),
+                    F95Stars = BuildCompactStars(f95Rating),
                     CoverUrl = g.CoverUrl,
                     ImageCandidates = candidates
                 };
@@ -723,7 +726,7 @@ public partial class LibraryViewModel : ViewModelBase
     private void ApplyCardMetrics(double scale)
     {
         CardWidth = Math.Round(200 * scale);
-        CardHeight = Math.Round(348 * scale);
+        CardHeight = Math.Round(400 * scale);
         MetaFontSize = Math.Clamp(11.5 * scale, 11, 15);
     }
 
@@ -741,6 +744,22 @@ public partial class LibraryViewModel : ViewModelBase
         LibraryCountLabel = installedOnly
             ? $"{Games.Count} installed"
             : $"{Games.Count} games · {installed} installed";
+    }
+
+    private static IReadOnlyList<StarSlotViewModel> BuildCompactStars(double? rating)
+    {
+        var value = rating is > 0 ? rating.Value : 0;
+        var slots = new StarSlotViewModel[5];
+        for (var i = 0; i < 5; i++)
+        {
+            slots[i] = new StarSlotViewModel
+            {
+                Index = i,
+                StarSize = 14,
+                Fill = Math.Clamp(value - i, 0, 1)
+            };
+        }
+        return slots;
     }
 
     private async Task LoadCoverAsync(LibraryItemViewModel item)
@@ -1510,8 +1529,9 @@ public partial class ScreenshotThumbViewModel : ViewModelBase
 public partial class StarSlotViewModel : ViewModelBase
 {
     public int Index { get; init; }
+    public double StarSize { get; init; } = 28;
     [ObservableProperty] private double _fill;
-    public double FillWidth => Math.Clamp(Fill, 0, 1) * 28;
+    public double FillWidth => Math.Clamp(Fill, 0, 1) * StarSize;
     /// <summary>Invariant half-star command parameter (e.g. "1.5").</summary>
     public string HalfParam => (Index + 0.5).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
     /// <summary>Invariant full-star command parameter (e.g. "2.0").</summary>
@@ -1533,21 +1553,8 @@ public partial class PlayStatusPillViewModel : ViewModelBase
     private IBrush SoftBorder => new SolidColorBrush(Color.Parse("#44FFFFFF"));
     private IBrush SoftForeground => new SolidColorBrush(Color.Parse("#B0B8C4"));
 
-    private IBrush ActiveFill => Value switch
-    {
-        "playing" => new SolidColorBrush(Color.Parse("#2A5F9E")),
-        "completed" => new SolidColorBrush(Color.Parse("#1F6B45")),
-        "dropped" => new SolidColorBrush(Color.Parse("#8A3040")),
-        _ => new SolidColorBrush(Color.Parse("#3A4658"))
-    };
-
-    private IBrush ActiveBorder => Value switch
-    {
-        "playing" => new SolidColorBrush(Color.Parse("#4A8FD4")),
-        "completed" => new SolidColorBrush(Color.Parse("#3D9A66")),
-        "dropped" => new SolidColorBrush(Color.Parse("#C45A6A")),
-        _ => new SolidColorBrush(Color.Parse("#5A6A7E"))
-    };
+    private IBrush ActiveFill => PlayStatusPalette.Fill(Value);
+    private IBrush ActiveBorder => PlayStatusPalette.Border(Value);
 
     partial void OnIsActiveChanged(bool value)
     {
@@ -1580,8 +1587,8 @@ public partial class GameDetailViewModel : ViewModelBase
             StatusPills.Add(new PlayStatusPillViewModel { Value = value, Label = label });
         for (var i = 0; i < 5; i++)
         {
-            YourStars.Add(new StarSlotViewModel { Index = i });
-            F95Stars.Add(new StarSlotViewModel { Index = i });
+            YourStars.Add(new StarSlotViewModel { Index = i, StarSize = 24 });
+            F95Stars.Add(new StarSlotViewModel { Index = i, StarSize = 28 });
         }
     }
 
@@ -2057,6 +2064,78 @@ public partial class GameDetailViewModel : ViewModelBase
             _toasts.Error(ex.Message);
         }
         finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task UploadSaveAsync()
+    {
+        if (Busy) return;
+        var owner = (Avalonia.Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+        if (owner is null) return;
+
+        var files = await owner.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Upload Ren'Py save",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Ren'Py saves") { Patterns = ["*.save", "*.sav"] },
+                new FilePickerFileType("All files") { Patterns = ["*.*"] }
+            ]
+        });
+        if (files.Count == 0 || files[0].TryGetLocalPath() is not { } path)
+            return;
+
+        Busy = true; Error = null;
+        try
+        {
+            var uploaded = await _app.Hub.UploadSaveAsync(GameId, path);
+            await ReloadSavesAsync();
+            Status = $"Uploaded {uploaded.Filename}";
+            _toasts.Success($"Uploaded · {uploaded.Filename}");
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+            _toasts.Error(ex.Message);
+        }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task DeleteSaveAsync(CloudSaveItemViewModel? item)
+    {
+        if (item is null || Busy) return;
+        var owner = (Avalonia.Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+        var ok = await ConfirmDialog.ShowAsync(
+            owner,
+            "Delete cloud save?",
+            $"Delete “{item.Filename}” from the hub?\n\nThis does not remove the file from your local game folder.",
+            "Delete");
+        if (!ok) return;
+
+        Busy = true; Error = null;
+        try
+        {
+            await _app.Hub.DeleteSaveAsync(GameId, item.Id);
+            Saves.Remove(item);
+            Status = $"Deleted {item.Filename}";
+            _toasts.Success($"Deleted · {item.Filename}");
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+            _toasts.Error(ex.Message);
+        }
+        finally { Busy = false; }
+    }
+
+    private async Task ReloadSavesAsync()
+    {
+        var list = await _app.Hub.ListSavesAsync(GameId);
+        Saves.Clear();
+        foreach (var s in list)
+            Saves.Add(new CloudSaveItemViewModel { Save = s });
     }
 
     [RelayCommand]
