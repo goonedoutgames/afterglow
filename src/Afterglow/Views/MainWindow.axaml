@@ -119,7 +119,10 @@
           </DockPanel>
         </Border>
 
-        <Border Padding="0" Classes.glass-strong="{Binding ShowShell}" CornerRadius="18">
+        <!-- Clip children to rounded shell so square content doesn't poke through corners.
+             Nested panel keeps BoxShadow on the outer glass plate. -->
+        <Border Classes.glass-strong="{Binding ShowShell}" CornerRadius="18" ClipToBounds="False" Padding="0">
+          <Border CornerRadius="18" ClipToBounds="True" Background="Transparent">
           <DockPanel>
             <Border DockPanel.Dock="Top" Padding="22,18"
                     Background="#18FFFFFF" BorderBrush="#28FFFFFF" BorderThickness="0,0,0,1"
@@ -157,6 +160,7 @@
               </ContentControl.DataTemplates>
             </ContentControl>
           </DockPanel>
+          </Border>
         </Border>
       </DockPanel>
     </DockPanel>

@@ -538,11 +538,13 @@ public partial class LibraryViewModel : ViewModelBase
         _app = app;
         _media = media;
         _openGame = openGame;
+        _suppressFilterRefresh = true;
         SortBy = SortChoices[0];
         StatusFilter = StatusChoices[0];
         InstallFilter = InstallChoices[0];
         CardSizeChoice = CardSizeChoices[1];
         ApplyCardSizeFromPrefs();
+        _suppressFilterRefresh = false;
     }
 
     public ObservableCollection<LibraryItemViewModel> Games { get; } = [];
@@ -706,9 +708,7 @@ public partial class LibraryViewModel : ViewModelBase
             <= 1.65 => CardSizeChoices[3],
             _ => CardSizeChoices[4]
         };
-        _suppressFilterRefresh = true;
         CardSizeChoice = choice;
-        _suppressFilterRefresh = false;
         ApplyCardMetrics(scale);
     }
 
@@ -723,9 +723,10 @@ public partial class LibraryViewModel : ViewModelBase
             _ => 1.0
         };
         ApplyCardMetrics(scale);
-        var prefs = _app.Preferences;
-        prefs.LibraryCardScale = scale;
-        try { await _app.SavePreferencesAsync(prefs); }
+
+        // Only touch card scale — never rewrite the whole prefs object (startup races
+        // used to wipe LibrarySetupComplete / LibraryRoot and force the setup screen).
+        try { await _app.SaveLibraryCardScaleAsync(scale); }
         catch { /* non-fatal */ }
     }
 

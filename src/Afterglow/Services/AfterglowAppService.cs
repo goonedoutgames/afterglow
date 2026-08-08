@@ -53,8 +53,24 @@ public sealed class AfterglowAppService : IDisposable
     {
         Connection = await _db.GetConnectionConfigAsync(ct);
         Preferences = await _db.GetUiPreferencesAsync(ct);
-        if (string.IsNullOrWhiteSpace(Preferences.LibraryRoot))
+        var hadStoredRoot = !string.IsNullOrWhiteSpace(Preferences.LibraryRoot);
+        if (!hadStoredRoot)
             Preferences.LibraryRoot = AppPaths.DefaultLibraryRoot;
+
+        // Heal prefs wiped by older card-scale saves that rewrote the whole row.
+        if (!Preferences.LibrarySetupComplete)
+        {
+            var hasInstalls = false;
+            try { hasInstalls = (await _db.GetInstallsAsync(ct)).Count > 0; }
+            catch { /* ignore */ }
+
+            if (hasInstalls || (hadStoredRoot && Directory.Exists(Preferences.LibraryRoot)))
+            {
+                Preferences.LibrarySetupComplete = true;
+                await _db.SaveUiPreferencesAsync(Preferences, ct);
+            }
+        }
+
         if (Preferences.LibrarySetupComplete)
             AppPaths.EnsureDirectories(Preferences.LibraryRoot);
 
@@ -121,6 +137,14 @@ public sealed class AfterglowAppService : IDisposable
         Preferences = prefs;
         AppPaths.EnsureDirectories(prefs.LibraryRoot);
         await _db.SaveUiPreferencesAsync(prefs, ct);
+    }
+
+    /// <summary>Updates card scale only — avoids clobbering LibrarySetupComplete / LibraryRoot.</summary>
+    public async Task SaveLibraryCardScaleAsync(double scale, CancellationToken ct = default)
+    {
+        scale = Math.Clamp(scale, 0.75, 2.0);
+        Preferences.LibraryCardScale = scale;
+        await _db.UpdateLibraryCardScaleAsync(scale, ct);
     }
 
     /// <summary>Clears hub connection + UI prefs so First-run can choose Local/Remote again. Keeps local installs.</summary>

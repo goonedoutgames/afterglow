@@ -71,6 +71,16 @@ public sealed class LocalDatabase : IDisposable
             [("$accent", value.AccentHex), ("$blur", value.GlassBlur), ("$compact", value.CompactDensity ? 1 : 0), ("$root", value.LibraryRoot), ("$concurrency", value.DownloadConcurrency), ("$extract", value.AutoExtract ? 1 : 0), ("$setup", value.LibrarySetupComplete ? 1 : 0), ("$scale", value.LibraryCardScale)],
             cancellationToken);
 
+    public Task UpdateLibraryCardScaleAsync(double scale, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(
+            """
+            INSERT INTO ui_prefs(id,accent_hex,glass_blur,compact_density,library_root,download_concurrency,auto_extract,library_setup_done,library_card_scale)
+            VALUES(1,'#3D9CF0',24,0,'',2,1,0,$scale)
+            ON CONFLICT(id) DO UPDATE SET library_card_scale=$scale
+            """,
+            [("$scale", scale)],
+            cancellationToken);
+
     public Task ResetConnectionAsync(CancellationToken cancellationToken = default) =>
         ExecuteAsync("INSERT INTO connection_config(id,mode,remote_api_base,auth_token,client_id) VALUES(1,$mode,NULL,NULL,$client) ON CONFLICT(id) DO UPDATE SET mode=$mode,remote_api_base=NULL,auth_token=NULL",
             [("$mode", (int)BackendMode.Unconfigured), ("$client", Guid.NewGuid().ToString("N"))], cancellationToken);
