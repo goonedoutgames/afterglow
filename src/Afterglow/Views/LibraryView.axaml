@@ -74,36 +74,36 @@
             <Border Classes="game-card-host"
                     Width="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).CardWidth}"
                     Height="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).CardHeight}"
-                    PointerPressed="GameCard_PointerPressed" Tag="{Binding}"
-                    ToolTip.Tip="{Binding Title}">
+                    PointerPressed="GameCard_PointerPressed" Tag="{Binding}">
               <Border Classes="game-card">
                 <Border Classes="game-card-face">
                   <DockPanel>
-                    <Border DockPanel.Dock="Bottom" Classes="game-card-meta" Padding="10,8">
-                      <StackPanel Spacing="5">
-                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
-                                   FontSize="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).MetaFontSize}" />
+                    <Border DockPanel.Dock="Bottom" Classes="game-card-meta" Padding="12,10">
+                      <StackPanel Spacing="6">
+                        <ctrl:MarqueeText Text="{Binding Title}" FontWeight="SemiBold"
+                                          FontSize="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).MetaFontSize}"
+                                          Foreground="{DynamicResource TextBrush}" />
                         <TextBlock Text="{Binding Subtitle}" Classes="caption" TextTrimming="CharacterEllipsis"
                                    FontSize="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).MetaFontSize}" />
 
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                          <Border Classes="status-badge status-sm"
-                                  Background="{Binding StatusBadgeBrush}"
-                                  BorderBrush="{Binding StatusBadgeBorder}">
-                            <TextBlock Text="{Binding PlayStatusLabel}" FontSize="10" FontWeight="SemiBold"
-                                       Foreground="White" />
-                          </Border>
-                          <Border Classes="status-badge status-sm installed-chip"
-                                  IsVisible="{Binding IsInstalled}">
-                            <TextBlock Text="Installed" FontSize="10" FontWeight="SemiBold" Foreground="White" />
-                          </Border>
+                        <Border Classes="status-badge status-sm" HorizontalAlignment="Left"
+                                Background="{Binding StatusBadgeBrush}"
+                                BorderBrush="{Binding StatusBadgeBorder}">
+                          <TextBlock Text="{Binding PlayStatusLabel}" FontSize="11" FontWeight="SemiBold"
+                                     Foreground="White" />
+                        </Border>
+
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                          <TextBlock Text="&#xE121;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol"
+                                     Classes="caption" FontSize="13" VerticalAlignment="Center"
+                                     ToolTip.Tip="Playtime" />
+                          <TextBlock Text="{Binding PlaytimeLabel}" Classes="caption" VerticalAlignment="Center"
+                                     FontSize="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).MetaFontSize}" />
                         </StackPanel>
 
-                        <TextBlock Text="{Binding PlaytimeLabel}" Classes="caption"
-                                   FontSize="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).MetaFontSize}" />
-
-                        <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" RowSpacing="2" ColumnSpacing="6">
-                          <TextBlock Text="You" Classes="star-label" VerticalAlignment="Center" />
+                        <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" RowSpacing="3" ColumnSpacing="6">
+                          <TextBlock Text="You" Classes="star-label" VerticalAlignment="Center"
+                                     FontSize="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).MetaFontSize}" />
                           <ItemsControl Grid.Column="1" ItemsSource="{Binding UserStars}" VerticalAlignment="Center">
                             <ItemsControl.ItemsPanel>
                               <ItemsPanelTemplate>
@@ -112,13 +112,13 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                               <DataTemplate x:DataType="vm:StarSlotViewModel">
-                                <Panel Width="14" Height="14">
-                                  <TextBlock Text="★" FontSize="12" Width="14" Height="14"
-                                             Foreground="#55FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                <Panel Width="15" Height="15">
+                                  <TextBlock Text="★" FontSize="13" Width="15" Height="15"
+                                             Foreground="#40FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top"
                                              TextAlignment="Center" />
-                                  <Border Width="{Binding FillWidth}" Height="14" HorizontalAlignment="Left" ClipToBounds="True">
-                                    <TextBlock Text="★" FontSize="12" Width="14" Height="14"
-                                               Foreground="#F5C542" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                  <Border Width="{Binding FillWidth}" Height="15" HorizontalAlignment="Left" ClipToBounds="True">
+                                    <TextBlock Text="★" FontSize="13" Width="15" Height="15"
+                                               Foreground="#D6DEE8" HorizontalAlignment="Left" VerticalAlignment="Top"
                                                TextAlignment="Center" />
                                   </Border>
                                 </Panel>
@@ -126,9 +126,11 @@
                             </ItemsControl.ItemTemplate>
                           </ItemsControl>
                           <TextBlock Grid.Column="2" Text="{Binding UserRatingText}" Classes="caption"
-                                     VerticalAlignment="Center" MinWidth="22" />
+                                     VerticalAlignment="Center" MinWidth="24"
+                                     FontSize="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).MetaFontSize}" />
 
-                          <TextBlock Grid.Row="1" Text="F95" Classes="star-label" VerticalAlignment="Center" />
+                          <TextBlock Grid.Row="1" Text="F95" Classes="star-label" VerticalAlignment="Center"
+                                     FontSize="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).MetaFontSize}" />
                           <ItemsControl Grid.Row="1" Grid.Column="1" ItemsSource="{Binding F95Stars}" VerticalAlignment="Center">
                             <ItemsControl.ItemsPanel>
                               <ItemsPanelTemplate>
@@ -137,13 +139,13 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                               <DataTemplate x:DataType="vm:StarSlotViewModel">
-                                <Panel Width="14" Height="14">
-                                  <TextBlock Text="★" FontSize="12" Width="14" Height="14"
-                                             Foreground="#55FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                <Panel Width="15" Height="15">
+                                  <TextBlock Text="★" FontSize="13" Width="15" Height="15"
+                                             Foreground="#40FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top"
                                              TextAlignment="Center" />
-                                  <Border Width="{Binding FillWidth}" Height="14" HorizontalAlignment="Left" ClipToBounds="True">
-                                    <TextBlock Text="★" FontSize="12" Width="14" Height="14"
-                                               Foreground="#F5C542" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                  <Border Width="{Binding FillWidth}" Height="15" HorizontalAlignment="Left" ClipToBounds="True">
+                                    <TextBlock Text="★" FontSize="13" Width="15" Height="15"
+                                               Foreground="#D6DEE8" HorizontalAlignment="Left" VerticalAlignment="Top"
                                                TextAlignment="Center" />
                                   </Border>
                                 </Panel>
@@ -151,16 +153,31 @@
                             </ItemsControl.ItemTemplate>
                           </ItemsControl>
                           <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding F95RatingText}" Classes="caption"
-                                     VerticalAlignment="Center" Opacity="0.9" MinWidth="22" />
+                                     VerticalAlignment="Center" Opacity="0.9" MinWidth="24"
+                                     FontSize="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).MetaFontSize}" />
                         </Grid>
                       </StackPanel>
                     </Border>
+
                     <Panel>
                       <Border Classes="cover-fallback" />
                       <ctrl:AnimatedImageView Media="{Binding CoverAnimation}"
                                               FallbackSource="{Binding Cover}"
                                               Stretch="UniformToFill"
                                               IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                      <!-- Installed corner ribbon -->
+                      <Panel Width="54" Height="54" HorizontalAlignment="Right" VerticalAlignment="Top"
+                             IsVisible="{Binding IsInstalled}" IsHitTestVisible="False">
+                        <Path Fill="#E03D9CF0" Data="M 0,0 L 54,0 L 54,54 Z" />
+                        <TextBlock Text="&#xE7F4;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol"
+                                   FontSize="15" Foreground="White"
+                                   HorizontalAlignment="Right" VerticalAlignment="Top"
+                                   Margin="0,6,7,0" />
+                        <TextBlock Text="&#xE73E;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol"
+                                   FontSize="10" Foreground="#B8FFD0"
+                                   HorizontalAlignment="Right" VerticalAlignment="Top"
+                                   Margin="0,18,5,0" />
+                      </Panel>
                     </Panel>
                   </DockPanel>
                 </Border>
@@ -176,40 +193,49 @@
              PointerReleased="List_PointerReleased">
       <ListBox.ItemTemplate>
         <DataTemplate x:DataType="vm:LibraryItemViewModel">
-          <Border Classes="glass-chip" Padding="10,8" Margin="0,2" ToolTip.Tip="{Binding Title}">
-            <Grid ColumnDefinitions="Auto,*,Auto">
-              <Border Width="56" Height="84" CornerRadius="8" ClipToBounds="True" Classes="cover-fallback">
-                <ctrl:AnimatedImageView Media="{Binding CoverAnimation}"
-                                        FallbackSource="{Binding Cover}"
-                                        Stretch="UniformToFill"
-                                        IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
-              </Border>
+          <Border Classes="glass-chip" Padding="10,8" Margin="0,2">
+            <Grid ColumnDefinitions="Auto,*">
+              <Panel Width="56" Height="84">
+                <Border Width="56" Height="84" CornerRadius="8" ClipToBounds="True" Classes="cover-fallback">
+                  <ctrl:AnimatedImageView Media="{Binding CoverAnimation}"
+                                          FallbackSource="{Binding Cover}"
+                                          Stretch="UniformToFill"
+                                          IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                </Border>
+                <Panel Width="36" Height="36" HorizontalAlignment="Right" VerticalAlignment="Top"
+                       IsVisible="{Binding IsInstalled}" IsHitTestVisible="False">
+                  <Path Fill="#E03D9CF0" Data="M 0,0 L 36,0 L 36,36 Z" />
+                  <TextBlock Text="&#xE7F4;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol"
+                             FontSize="11" Foreground="White"
+                             HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,3,4,0" />
+                </Panel>
+              </Panel>
               <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="4">
-                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                <TextBlock Text="{Binding Subtitle}" Classes="muted" FontSize="12" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" FontSize="14" />
+                <TextBlock Text="{Binding Subtitle}" Classes="muted" FontSize="13" TextTrimming="CharacterEllipsis" />
                 <StackPanel Orientation="Horizontal" Spacing="8">
                   <Border Classes="status-badge status-sm"
                           Background="{Binding StatusBadgeBrush}"
                           BorderBrush="{Binding StatusBadgeBorder}">
-                    <TextBlock Text="{Binding PlayStatusLabel}" FontSize="10" FontWeight="SemiBold" Foreground="White" />
+                    <TextBlock Text="{Binding PlayStatusLabel}" FontSize="11" FontWeight="SemiBold" Foreground="White" />
                   </Border>
-                  <TextBlock Text="{Binding PlaytimeLabel}" Classes="caption" FontSize="12" VerticalAlignment="Center" />
+                  <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Text="&#xE121;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol"
+                               Classes="caption" FontSize="12" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding PlaytimeLabel}" Classes="caption" FontSize="13" VerticalAlignment="Center" />
+                  </StackPanel>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Spacing="12">
                   <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Text="You" Classes="star-label" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding UserRatingText}" Classes="caption" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding UserRatingText}" Classes="caption" VerticalAlignment="Center" FontSize="13" />
                   </StackPanel>
                   <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Text="F95" Classes="star-label" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding F95RatingText}" Classes="caption" VerticalAlignment="Center" Opacity="0.9" />
+                    <TextBlock Text="{Binding F95RatingText}" Classes="caption" VerticalAlignment="Center" Opacity="0.9" FontSize="13" />
                   </StackPanel>
                 </StackPanel>
               </StackPanel>
-              <Border Grid.Column="2" Classes="status-badge status-sm installed-chip"
-                      IsVisible="{Binding IsInstalled}" VerticalAlignment="Center">
-                <TextBlock Text="Installed" FontSize="11" FontWeight="SemiBold" Foreground="White" />
-              </Border>
             </Grid>
           </Border>
         </DataTemplate>

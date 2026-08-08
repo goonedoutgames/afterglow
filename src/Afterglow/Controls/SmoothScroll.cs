@@ -1,13 +1,13 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Threading;
 
 namespace Afterglow.Controls;
 
 /// <summary>
-/// Softens mouse-wheel scrolling by lerping Offset instead of jumping a full page per notch.
-/// Attach with <c>ctrl:SmoothScroll.IsEnabled="True"</c> (also applied globally in theme).
+/// Softens mouse-wheel scrolling with exponential smoothing toward a target offset.
 /// </summary>
 public static class SmoothScroll
 {
@@ -43,13 +43,14 @@ public static class SmoothScroll
         private readonly ScrollViewer _viewer;
         private DispatcherTimer? _timer;
         private double _targetY;
-        private double _velocity;
         private bool _attached;
+        private bool _animating;
 
-        // Tuned for trackpad + mouse wheel: shorter steps, soft settle.
-        private const double WheelPixelsPerNotch = 64;
-        private const double Friction = 0.82;
-        private const double SnapEpsilon = 0.35;
+        // Smaller steps + soft exponential settle = less jitter than spring+velocity.
+        private const double WheelPixelsPerNotch = 42;
+        private const double TrackpadScale = 28;
+        private const double Ease = 0.16;
+        private const double SnapEpsilon = 0.4;
 
         public State(ScrollViewer viewer) => _viewer = viewer;
 
@@ -71,26 +72,32 @@ public static class SmoothScroll
 
         private void OnWheel(object? sender, PointerWheelEventArgs e)
         {
-            // Only soften vertical page scrolls; leave horizontal strips alone.
             if (Math.Abs(e.Delta.Y) < 0.01 || Math.Abs(e.Delta.X) > Math.Abs(e.Delta.Y))
                 return;
 
-            var extent = _viewer.Extent.Height;
-            var viewport = _viewer.Viewport.Height;
-            var max = Math.Max(0, extent - viewport);
+            var max = MaxOffset();
             if (max <= 0) return;
 
             e.Handled = true;
 
             var current = _viewer.Offset.Y;
-            if (_timer is null || !_timer.IsEnabled)
+            if (!_animating)
                 _targetY = current;
 
-            // Delta.Y is typically ±1 per mouse notch; trackpads send fractions.
-            _targetY = Math.Clamp(_targetY - e.Delta.Y * WheelPixelsPerNotch, 0, max);
-            _velocity = (_targetY - current) * 0.35;
+            // Mouse notches are ±1; trackpads send smaller fractions — scale both gently.
+            var step = Math.Abs(e.Delta.Y) >= 0.95
+                ? WheelPixelsPerNotch * Math.Sign(e.Delta.Y)
+                : e.Delta.Y * TrackpadScale;
+            _targetY = Math.Clamp(_targetY - step, 0, max);
 
             EnsureTimer();
+        }
+
+        private double MaxOffset()
+        {
+            var extent = _viewer.Extent.Height;
+            var viewport = _viewer.Viewport.Height;
+            return Math.Max(0, extent - viewport);
         }
 
         private void EnsureTimer()
@@ -104,12 +111,14 @@ public static class SmoothScroll
                 _timer.Tick += OnTick;
             }
 
+            _animating = true;
             if (!_timer.IsEnabled)
                 _timer.Start();
         }
 
         private void StopTimer()
         {
+            _animating = false;
             if (_timer is null) return;
             _timer.Stop();
             _timer.Tick -= OnTick;
@@ -118,32 +127,25 @@ public static class SmoothScroll
 
         private void OnTick(object? sender, EventArgs e)
         {
-            var extent = _viewer.Extent.Height;
-            var viewport = _viewer.Viewport.Height;
-            var max = Math.Max(0, extent - viewport);
+            var max = MaxOffset();
             _targetY = Math.Clamp(_targetY, 0, max);
 
             var current = _viewer.Offset.Y;
             var remaining = _targetY - current;
 
-            // Critically-damped-ish approach: blend velocity + spring pull.
-            _velocity = _velocity * Friction + remaining * 0.22;
-            var next = current + _velocity;
-
-            if (Math.Abs(remaining) < SnapEpsilon && Math.Abs(_velocity) < SnapEpsilon)
+            if (Math.Abs(remaining) < SnapEpsilon)
             {
                 _viewer.Offset = new Vector(_viewer.Offset.X, _targetY);
-                _velocity = 0;
-                _timer?.Stop();
+                StopTimer();
                 return;
             }
 
-            // Overshoot clamp
-            if ((_velocity > 0 && next > _targetY) || (_velocity < 0 && next < _targetY))
+            // Exponential ease — never overshoots, feels continuous.
+            var next = current + remaining * Ease;
+            if (Math.Abs(_targetY - next) < SnapEpsilon)
                 next = _targetY;
 
-            next = Math.Clamp(next, 0, max);
-            _viewer.Offset = new Vector(_viewer.Offset.X, next);
+            _viewer.Offset = new Vector(_viewer.Offset.X, Math.Clamp(next, 0, max));
         }
     }
 }

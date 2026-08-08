@@ -21,101 +21,15 @@
     <StackPanel Spacing="16" Margin="8">
       <Button Classes="ghost" Content="← Back to library" Command="{Binding BackCommand}" HorizontalAlignment="Left" />
 
-      <!-- Left: cover + tracking · Right: info / actions (fills empty space) -->
+      <!-- Top: cover + info -->
       <Grid ColumnDefinitions="280,*" ColumnSpacing="20">
-        <StackPanel Spacing="12" VerticalAlignment="Top">
-          <Border Width="280" Height="408" CornerRadius="14" ClipToBounds="True" Classes="cover-fallback"
-                  HorizontalAlignment="Left">
-            <ctrl:AnimatedImageView Media="{Binding CoverAnimation}"
-                                    FallbackSource="{Binding Cover}"
-                                    Stretch="UniformToFill"
-                                    IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
-          </Border>
-
-          <Border Classes="glass" Padding="12">
-            <StackPanel Spacing="10">
-              <StackPanel Spacing="2">
-                <TextBlock Text="Your tracking" FontWeight="SemiBold" />
-                <TextBlock Classes="caption" Text="Status, rating, and notes." TextWrapping="Wrap" />
-              </StackPanel>
-
-              <StackPanel Spacing="4">
-                <TextBlock Classes="field-label" Text="Your rating" Margin="0" />
-                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                  <ItemsControl ItemsSource="{Binding YourStars}">
-                    <ItemsControl.ItemsPanel>
-                      <ItemsPanelTemplate>
-                        <StackPanel Orientation="Horizontal" Spacing="1" />
-                      </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate x:DataType="vm:StarSlotViewModel">
-                        <Panel Width="24" Height="24">
-                          <TextBlock Text="★" FontSize="20" Width="24" Height="24"
-                                     Foreground="#55FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top"
-                                     TextAlignment="Center" IsHitTestVisible="False" />
-                          <Border Width="{Binding FillWidth}" Height="24" HorizontalAlignment="Left" ClipToBounds="True"
-                                  IsHitTestVisible="False">
-                            <TextBlock Text="★" FontSize="20" Width="24" Height="24"
-                                       Foreground="#F5C542" HorizontalAlignment="Left" VerticalAlignment="Top"
-                                       TextAlignment="Center" />
-                          </Border>
-                          <Grid ColumnDefinitions="*,*">
-                            <Button Classes="star-hit" Grid.Column="0"
-                                    Command="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).SetUserRatingCommand}"
-                                    CommandParameter="{Binding HalfParam}"
-                                    IsEnabled="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).Busy, Converter={x:Static BoolConverters.Not}}"
-                                    Tag="{Binding HalfParam}"
-                                    PointerEntered="StarHit_PointerEntered"
-                                    PointerExited="StarHit_PointerExited" />
-                            <Button Classes="star-hit" Grid.Column="1"
-                                    Command="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).SetUserRatingCommand}"
-                                    CommandParameter="{Binding FullParam}"
-                                    IsEnabled="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).Busy, Converter={x:Static BoolConverters.Not}}"
-                                    Tag="{Binding FullParam}"
-                                    PointerEntered="StarHit_PointerEntered"
-                                    PointerExited="StarHit_PointerExited" />
-                          </Grid>
-                        </Panel>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                  <TextBlock Text="{Binding UserRatingText}" Classes="caption" VerticalAlignment="Center" MinWidth="24" />
-                </StackPanel>
-              </StackPanel>
-
-              <StackPanel Spacing="4">
-                <TextBlock Classes="field-label" Text="Play status" Margin="0" />
-                <ItemsControl ItemsSource="{Binding StatusPills}">
-                  <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                      <WrapPanel />
-                    </ItemsPanelTemplate>
-                  </ItemsControl.ItemsPanel>
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:PlayStatusPillViewModel">
-                      <Button Classes="status-pill" Margin="0,0,6,6" Padding="10,6" FontSize="12"
-                              Content="{Binding Label}"
-                              Classes.is-active="{Binding IsActive}"
-                              Background="{Binding PillBrush}"
-                              BorderBrush="{Binding PillBorder}"
-                              Foreground="{Binding PillForeground}"
-                              Command="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).SetPlayStatusCommand}"
-                              CommandParameter="{Binding Value}"
-                              IsEnabled="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).Busy, Converter={x:Static BoolConverters.Not}}" />
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </StackPanel>
-
-              <TextBlock Classes="field-label" Text="Notes" Margin="0" />
-              <TextBox Text="{Binding UserNotes}" AcceptsReturn="True" TextWrapping="Wrap"
-                       MinHeight="88" IsEnabled="{Binding !Busy}" />
-              <Button Classes="accent" Content="Save notes" Command="{Binding SaveNotesCommand}"
-                      HorizontalAlignment="Stretch" IsEnabled="{Binding !Busy}" />
-            </StackPanel>
-          </Border>
-        </StackPanel>
+        <Border Width="280" Height="408" CornerRadius="14" ClipToBounds="True" Classes="cover-fallback"
+                HorizontalAlignment="Left" VerticalAlignment="Top">
+          <ctrl:AnimatedImageView Media="{Binding CoverAnimation}"
+                                  FallbackSource="{Binding Cover}"
+                                  Stretch="UniformToFill"
+                                  IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        </Border>
 
         <StackPanel Grid.Column="1" Spacing="12">
           <TextBlock Text="{Binding Title}" Classes="title" TextWrapping="Wrap" />
@@ -164,6 +78,95 @@
           </WrapPanel>
         </StackPanel>
       </Grid>
+
+      <!-- Full-width tracking (same width as screenshots / sections below) -->
+      <Border Classes="glass" Padding="14">
+        <StackPanel Spacing="10">
+          <StackPanel Spacing="2">
+            <TextBlock Text="Your tracking" FontWeight="SemiBold" />
+            <TextBlock Classes="caption" Text="Status, rating, and notes for this game." />
+          </StackPanel>
+
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="20" RowDefinitions="Auto,Auto">
+            <StackPanel Spacing="4">
+              <TextBlock Classes="field-label" Text="Your rating" Margin="0" />
+              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <ItemsControl ItemsSource="{Binding YourStars}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <StackPanel Orientation="Horizontal" Spacing="1" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:StarSlotViewModel">
+                      <Panel Width="24" Height="24">
+                        <TextBlock Text="★" FontSize="20" Width="24" Height="24"
+                                   Foreground="#55FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                   TextAlignment="Center" IsHitTestVisible="False" />
+                        <Border Width="{Binding FillWidth}" Height="24" HorizontalAlignment="Left" ClipToBounds="True"
+                                IsHitTestVisible="False">
+                          <TextBlock Text="★" FontSize="20" Width="24" Height="24"
+                                     Foreground="#F5C542" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                     TextAlignment="Center" />
+                        </Border>
+                        <Grid ColumnDefinitions="*,*">
+                          <Button Classes="star-hit" Grid.Column="0"
+                                  Command="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).SetUserRatingCommand}"
+                                  CommandParameter="{Binding HalfParam}"
+                                  IsEnabled="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).Busy, Converter={x:Static BoolConverters.Not}}"
+                                  Tag="{Binding HalfParam}"
+                                  PointerEntered="StarHit_PointerEntered"
+                                  PointerExited="StarHit_PointerExited" />
+                          <Button Classes="star-hit" Grid.Column="1"
+                                  Command="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).SetUserRatingCommand}"
+                                  CommandParameter="{Binding FullParam}"
+                                  IsEnabled="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).Busy, Converter={x:Static BoolConverters.Not}}"
+                                  Tag="{Binding FullParam}"
+                                  PointerEntered="StarHit_PointerEntered"
+                                  PointerExited="StarHit_PointerExited" />
+                        </Grid>
+                      </Panel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="{Binding UserRatingText}" Classes="caption" VerticalAlignment="Center" MinWidth="24" />
+              </StackPanel>
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Spacing="4">
+              <TextBlock Classes="field-label" Text="Play status" Margin="0" />
+              <ItemsControl ItemsSource="{Binding StatusPills}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:PlayStatusPillViewModel">
+                    <Button Classes="status-pill" Margin="0,0,6,6" Padding="10,6" FontSize="12"
+                            Content="{Binding Label}"
+                            Classes.is-active="{Binding IsActive}"
+                            Background="{Binding PillBrush}"
+                            BorderBrush="{Binding PillBorder}"
+                            Foreground="{Binding PillForeground}"
+                            Command="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).SetPlayStatusCommand}"
+                            CommandParameter="{Binding Value}"
+                            IsEnabled="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).Busy, Converter={x:Static BoolConverters.Not}}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Spacing="4" Margin="0,8,0,0">
+              <TextBlock Classes="field-label" Text="Notes" Margin="0" />
+              <TextBox Text="{Binding UserNotes}" AcceptsReturn="True" TextWrapping="Wrap"
+                       MinHeight="72" IsEnabled="{Binding !Busy}" />
+              <Button Classes="accent" Content="Save notes" Command="{Binding SaveNotesCommand}"
+                      HorizontalAlignment="Left" IsEnabled="{Binding !Busy}" />
+            </StackPanel>
+          </Grid>
+        </StackPanel>
+      </Border>
 
       <Border Classes="glass" IsVisible="{Binding HasScreenshots}">
         <StackPanel Spacing="10">

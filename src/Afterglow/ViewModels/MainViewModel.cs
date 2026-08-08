@@ -577,7 +577,9 @@ public partial class LibraryViewModel : ViewModelBase
     [
         new("small", "Small"),
         new("medium", "Medium"),
-        new("large", "Large")
+        new("large", "Large"),
+        new("xl", "Extra Large"),
+        new("xxxl", "XXXL")
     ];
 
     [ObservableProperty] private string _search = "";
@@ -591,9 +593,9 @@ public partial class LibraryViewModel : ViewModelBase
     [ObservableProperty] private bool _gridView = true;
     [ObservableProperty] private LibraryItemViewModel? _selectedGame;
     [ObservableProperty] private string _libraryCountLabel = "";
-    [ObservableProperty] private double _cardWidth = 200;
-    [ObservableProperty] private double _cardHeight = 400;
-    [ObservableProperty] private double _metaFontSize = 12;
+    [ObservableProperty] private double _cardWidth = 236;
+    [ObservableProperty] private double _cardHeight = 430;
+    [ObservableProperty] private double _metaFontSize = 13.5;
 
     public async Task RefreshAsync()
     {
@@ -695,12 +697,14 @@ public partial class LibraryViewModel : ViewModelBase
 
     private void ApplyCardSizeFromPrefs()
     {
-        var scale = Math.Clamp(_app.Preferences.LibraryCardScale, 0.75, 1.5);
+        var scale = Math.Clamp(_app.Preferences.LibraryCardScale, 0.75, 2.0);
         var choice = scale switch
         {
             <= 0.85 => CardSizeChoices[0],
-            >= 1.2 => CardSizeChoices[2],
-            _ => CardSizeChoices[1]
+            <= 1.1 => CardSizeChoices[1],
+            <= 1.35 => CardSizeChoices[2],
+            <= 1.65 => CardSizeChoices[3],
+            _ => CardSizeChoices[4]
         };
         _suppressFilterRefresh = true;
         CardSizeChoice = choice;
@@ -714,6 +718,8 @@ public partial class LibraryViewModel : ViewModelBase
         {
             "small" => 0.8,
             "large" => 1.25,
+            "xl" => 1.5,
+            "xxxl" => 1.85,
             _ => 1.0
         };
         ApplyCardMetrics(scale);
@@ -725,9 +731,10 @@ public partial class LibraryViewModel : ViewModelBase
 
     private void ApplyCardMetrics(double scale)
     {
-        CardWidth = Math.Round(200 * scale);
-        CardHeight = Math.Round(400 * scale);
-        MetaFontSize = Math.Clamp(11.5 * scale, 11, 15);
+        // Wider base so covers read better; meta text scales up with size.
+        CardWidth = Math.Round(236 * scale);
+        CardHeight = Math.Round(430 * scale);
+        MetaFontSize = Math.Clamp(13.5 * Math.Sqrt(scale), 12.5, 18);
     }
 
     private void ApplyLocalFilters()
@@ -752,10 +759,10 @@ public partial class LibraryViewModel : ViewModelBase
         var slots = new StarSlotViewModel[5];
         for (var i = 0; i < 5; i++)
         {
-            slots[i] = new StarSlotViewModel
+                slots[i] = new StarSlotViewModel
             {
                 Index = i,
-                StarSize = 14,
+                StarSize = 15,
                 Fill = Math.Clamp(value - i, 0, 1)
             };
         }
