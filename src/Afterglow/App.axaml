@@ -29,6 +29,8 @@
     <!-- Frosted glass: lighter fills so acrylic shows through; still opaque enough to read -->
     <SolidColorBrush x:Key="GlassFillBrush" Color="#6E161C28" />
     <SolidColorBrush x:Key="GlassFillStrongBrush" Color="#8A141A24" />
+    <SolidColorBrush x:Key="ToastFillBrush" Color="#F2181E2A" />
+    <SolidColorBrush x:Key="ToastBorderBrush" Color="#66FFFFFF" />
     <SolidColorBrush x:Key="GlassCardBrush" Color="#55141A22" />
     <SolidColorBrush x:Key="GlassCardHoverBrush" Color="#6618202C" />
     <SolidColorBrush x:Key="GlassMetaBrush" Color="#A00C1018" />

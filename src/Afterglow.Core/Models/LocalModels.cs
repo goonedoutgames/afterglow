@@ -20,6 +20,8 @@ public sealed class UiPreferences
     public bool AutoExtract { get; set; } = true;
     /// <summary>False until the user confirms a Steam-style library folder.</summary>
     public bool LibrarySetupComplete { get; set; }
+    /// <summary>Library grid card scale (0.75–1.5). Default 1.0.</summary>
+    public double LibraryCardScale { get; set; } = 1.0;
 }
 
 public sealed class LocalInstall

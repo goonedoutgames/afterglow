@@ -175,15 +175,16 @@
           <Border Classes="toast" Padding="0" MinWidth="300" MaxWidth="420"
                   ClipToBounds="True">
             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="0">
-              <Border Width="72" Height="72" Background="#22000000" IsVisible="{Binding HasCover}" ClipToBounds="True"
+              <Border Width="72" Height="72" Background="#33000000" IsVisible="{Binding HasCover}" ClipToBounds="True"
                       CornerRadius="14,0,0,14">
                 <Image Source="{Binding Cover}" Stretch="UniformToFill" />
               </Border>
               <StackPanel Grid.Column="1" Spacing="3" Margin="14,12,14,12" VerticalAlignment="Center">
                 <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis"
+                           Foreground="#F2F6FC"
                            IsVisible="{Binding HasTitle}" />
-                <TextBlock Text="{Binding Message}" TextWrapping="Wrap" FontSize="13" Opacity="0.95" />
-                <TextBlock Text="{Binding Subtitle}" Classes="caption" Opacity="0.75"
+                <TextBlock Text="{Binding Message}" TextWrapping="Wrap" FontSize="13" Foreground="#F2F6FC" />
+                <TextBlock Text="{Binding Subtitle}" Classes="caption" Foreground="#C8D2E0"
                            IsVisible="{Binding Subtitle, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
               </StackPanel>
             </Grid>

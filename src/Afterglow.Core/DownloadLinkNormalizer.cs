@@ -38,7 +38,8 @@ public static class DownloadLinkNormalizer
         if (host == "skip")
             return null;
 
-        var platform = InferPlatform(url) ?? InferPlatform(link.Label) ?? null;
+        // Prefer URL hints, then hub label (may already be Windows/Linux or PC).
+        var platform = InferPlatform(url) ?? InferPlatform(link.Label) ?? NormalizePlatformLabel(link.Label);
         var display = BuildDisplayName(url, host, platform, link.Label);
         return new NormalizedLink(url, host, platform, display, isMasked, isMasked ? url : null);
     }
@@ -74,7 +75,6 @@ public static class DownloadLinkNormalizer
         if (LooksLikeArchive(u)) return "http";
         if (u.StartsWith("http://") || u.StartsWith("https://"))
         {
-            // Keep unknown hosters that survived the hub scrape.
             try { return new Uri(url).Host.Replace("www.", "", StringComparison.OrdinalIgnoreCase); }
             catch { return "http"; }
         }
@@ -82,24 +82,107 @@ public static class DownloadLinkNormalizer
         return "skip";
     }
 
+    /// <summary>
+    /// Infer Windows / Linux / Mac / Android / PC / Windows/Linux from URL or heading text.
+    /// Ren'Py "PC" builds usually ship both Windows and Linux in one archive.
+    /// </summary>
     public static string? InferPlatform(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
         var t = text.ToLowerInvariant();
-        if (t.Contains("-win") || t.Contains("_win") || t.Contains("windows") || t.Contains("/win/") || t.Contains(" win "))
-            return "Windows";
-        if (t.Contains("-linux") || t.Contains("_linux") || t.Contains("linux") || t.Contains("/linux/"))
-            return "Linux";
-        if (t.Contains("-mac") || t.Contains("_mac") || t.Contains("macos") || t.Contains("osx") || t.Contains("/mac/"))
-            return "Mac";
-        if (t.Contains("android") || t.Contains("-apk") || t.EndsWith(".apk"))
-            return "Android";
+
+        if (ContainsAny(t,
+                "windows/linux", "linux/windows", "win/linux", "linux/win",
+                "windows / linux", "linux / windows", "windows & linux", "linux & windows",
+                "windows and linux", "linux and windows", "win-linux", "windows-linux"))
+            return "Windows/Linux";
+
+        if (ContainsAny(t, "windows/mac", "win/mac", "windows / mac", "pc/mac", "pc / mac"))
+            return "PC/Mac";
+
+        var hasWin = ContainsWinToken(t);
+        var hasLinux = t.Contains("linux", StringComparison.Ordinal);
+        var hasMac = t.Contains("macos", StringComparison.Ordinal) || t.Contains("osx", StringComparison.Ordinal)
+                     || t.Contains("-mac", StringComparison.Ordinal) || t.Contains("_mac", StringComparison.Ordinal)
+                     || t.Contains("/mac/", StringComparison.Ordinal) || HasWord(t, "mac");
+        var hasAndroid = t.Contains("android", StringComparison.Ordinal) || t.Contains("-apk", StringComparison.Ordinal)
+                         || t.EndsWith(".apk", StringComparison.Ordinal);
+        var hasPc = HasWord(t, "pc");
+
+        if (hasPc && !hasMac && !hasAndroid)
+            return hasLinux && !hasWin ? "PC" : "PC"; // dual Win+Linux package
+
+        if (hasWin && hasLinux) return "Windows/Linux";
+        if (hasWin) return "Windows";
+        if (hasLinux) return "Linux";
+        if (hasMac) return "Mac";
+        if (hasAndroid) return "Android";
+        if (hasPc) return "PC";
         return null;
+    }
+
+    /// <summary>Normalize an already-scraped label (e.g. hub sent "pc").</summary>
+    public static string? NormalizePlatformLabel(string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label)) return null;
+        return InferPlatform(label) ?? (label.Trim().Length < 40 ? label.Trim() : null);
+    }
+
+    /// <summary>True when a filter chip should include this platform label.</summary>
+    public static bool MatchesFilter(string? platform, string filter)
+    {
+        if (string.Equals(filter, "All", StringComparison.OrdinalIgnoreCase)) return true;
+        if (string.Equals(filter, "Unknown", StringComparison.OrdinalIgnoreCase))
+            return string.IsNullOrWhiteSpace(platform);
+
+        var p = platform ?? "";
+        if (string.Equals(filter, "Windows", StringComparison.OrdinalIgnoreCase))
+            return p.Contains("Windows", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(p, "PC", StringComparison.OrdinalIgnoreCase)
+                   || p.Contains("Win/", StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(filter, "Linux", StringComparison.OrdinalIgnoreCase))
+            return p.Contains("Linux", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(p, "PC", StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(filter, "Mac", StringComparison.OrdinalIgnoreCase))
+            return p.Contains("Mac", StringComparison.OrdinalIgnoreCase)
+                   || p.Contains("OS X", StringComparison.OrdinalIgnoreCase)
+                   || p.Contains("OSX", StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(filter, "Android", StringComparison.OrdinalIgnoreCase))
+            return p.Contains("Android", StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(filter, "PC", StringComparison.OrdinalIgnoreCase))
+            return string.Equals(p, "PC", StringComparison.OrdinalIgnoreCase)
+                   || p.Contains("Windows/Linux", StringComparison.OrdinalIgnoreCase);
+
+        return string.Equals(p, filter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ContainsWinToken(string t) =>
+        t.Contains("windows", StringComparison.Ordinal)
+        || t.Contains("-win", StringComparison.Ordinal)
+        || t.Contains("_win", StringComparison.Ordinal)
+        || t.Contains("/win/", StringComparison.Ordinal)
+        || t.Contains(" win ", StringComparison.Ordinal)
+        || HasWord(t, "win");
+
+    private static bool ContainsAny(string haystack, params string[] needles) =>
+        needles.Any(n => haystack.Contains(n, StringComparison.Ordinal));
+
+    private static bool HasWord(string text, string word)
+    {
+        var idx = 0;
+        while ((idx = text.IndexOf(word, idx, StringComparison.Ordinal)) >= 0)
+        {
+            var beforeOk = idx == 0 || !char.IsLetterOrDigit(text[idx - 1]);
+            var after = idx + word.Length;
+            var afterOk = after >= text.Length || !char.IsLetterOrDigit(text[after]);
+            if (beforeOk && afterOk) return true;
+            idx += word.Length;
+        }
+        return false;
     }
 
     private static string? ExtractMaskedTargetHost(string lowerUrl)
     {
-        // https://f95zone.to/masked/pixeldrain.com/177954/...
         const string marker = "f95zone.to/masked/";
         var idx = lowerUrl.IndexOf(marker, StringComparison.Ordinal);
         if (idx < 0) return null;
@@ -113,7 +196,6 @@ public static class DownloadLinkNormalizer
     {
         try
         {
-            // Masked F95 paths end in opaque ids that look like "filenames" — never show those.
             if (url.Contains("f95zone.to/masked/", StringComparison.OrdinalIgnoreCase)
                 || url.Contains("f95zone.to/masked-navigation", StringComparison.OrdinalIgnoreCase))
             {
@@ -121,7 +203,8 @@ public static class DownloadLinkNormalizer
                 return platform is null ? masked : $"{masked} · {platform}";
             }
 
-            if (!string.IsNullOrWhiteSpace(label) && label.Length < 80 && !LooksLikeOpaqueId(label))
+            if (!string.IsNullOrWhiteSpace(label) && label.Length < 80 && !LooksLikeOpaqueId(label)
+                && InferPlatform(label) is null)
                 return platform is null ? label.Trim() : $"{platform} · {label.Trim()}";
 
             var uri = new Uri(url);
@@ -148,7 +231,6 @@ public static class DownloadLinkNormalizer
             && !v.EndsWith(".7z", StringComparison.OrdinalIgnoreCase)
             && !v.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
             return true;
-        // mega / pixeldrain style path segments
         if (v.Length > 40 && v.Count(char.IsLetterOrDigit) > v.Length * 0.85)
             return true;
         return false;

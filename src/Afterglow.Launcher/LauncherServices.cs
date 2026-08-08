@@ -69,27 +69,48 @@ public sealed class RenpySaveSync(HubApiClient hubClient)
         return await hubClient.UploadSaveAsync(gameId, file, name, cancellationToken);
     }
 
+    /// <summary>Preferred folder to write a downloaded cloud save into for this install.</summary>
+    public static string ResolveLocalSaveDirectory(string installPath)
+    {
+        foreach (var dir in KnownSaveRoots(installPath))
+        {
+            if (Directory.Exists(dir)) return dir;
+        }
+
+        var gameDir = Path.Combine(installPath, "game");
+        if (Directory.Exists(gameDir))
+        {
+            var nested = Path.Combine(gameDir, "saves");
+            Directory.CreateDirectory(nested);
+            return nested;
+        }
+
+        var fallback = Path.Combine(installPath, "saves");
+        Directory.CreateDirectory(fallback);
+        return fallback;
+    }
+
     public static string? FindNewestSave(string installPath)
     {
         if (string.IsNullOrWhiteSpace(installPath) || !Directory.Exists(installPath))
             return null;
 
         var candidates = new List<string>();
-        void Collect(string dir)
+        void Collect(string dir, SearchOption depth)
         {
             if (!Directory.Exists(dir)) return;
             try
             {
-                candidates.AddRange(Directory.EnumerateFiles(dir, "*", SearchOption.TopDirectoryOnly)
-                    .Where(IsLikelySave));
+                candidates.AddRange(Directory.EnumerateFiles(dir, "*", depth).Where(IsLikelySave));
             }
             catch { /* ignore locked dirs */ }
         }
 
-        Collect(Path.Combine(installPath, "game", "saves"));
-        Collect(Path.Combine(installPath, "saves"));
-        Collect(Path.Combine(installPath, "Save"));
-        Collect(Path.Combine(installPath, "save"));
+        foreach (var root in KnownSaveRoots(installPath))
+            Collect(root, SearchOption.AllDirectories);
+
+        // Also scan install root shallowly for loose save files.
+        Collect(installPath, SearchOption.TopDirectoryOnly);
 
         try
         {
@@ -98,28 +119,66 @@ public sealed class RenpySaveSync(HubApiClient hubClient)
             if (Directory.Exists(renpyRoot))
             {
                 var gameName = Path.GetFileName(installPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                var compact = CompactName(gameName);
                 foreach (var dir in Directory.EnumerateDirectories(renpyRoot))
                 {
                     var leaf = Path.GetFileName(dir);
-                    if (!string.IsNullOrWhiteSpace(gameName)
-                        && leaf.Contains(gameName, StringComparison.OrdinalIgnoreCase))
-                        Collect(dir);
+                    if (string.IsNullOrWhiteSpace(leaf)) continue;
+                    var match = (!string.IsNullOrWhiteSpace(gameName)
+                                 && leaf.Contains(gameName, StringComparison.OrdinalIgnoreCase))
+                                || (!string.IsNullOrWhiteSpace(compact)
+                                    && CompactName(leaf).Contains(compact, StringComparison.OrdinalIgnoreCase))
+                                || (!string.IsNullOrWhiteSpace(compact)
+                                    && compact.Contains(CompactName(leaf), StringComparison.OrdinalIgnoreCase)
+                                    && CompactName(leaf).Length >= 4);
+                    if (match)
+                        Collect(dir, SearchOption.AllDirectories);
                 }
             }
         }
         catch { /* ignore */ }
 
         return candidates
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(File.GetLastWriteTimeUtc)
             .FirstOrDefault();
+    }
+
+    private static IEnumerable<string> KnownSaveRoots(string installPath)
+    {
+        yield return Path.Combine(installPath, "game", "saves");
+        yield return Path.Combine(installPath, "game", "Save");
+        yield return Path.Combine(installPath, "saves");
+        yield return Path.Combine(installPath, "Save");
+        yield return Path.Combine(installPath, "save");
+    }
+
+    private static string CompactName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "";
+        return new string(name.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
     }
 
     private static bool IsLikelySave(string path)
     {
         var name = Path.GetFileName(path);
         if (string.IsNullOrWhiteSpace(name) || name.StartsWith('.')) return false;
+        // Skip obvious non-saves under game/
+        var lower = name.ToLowerInvariant();
+        if (lower is "script_version.txt" or "project.json" or "android.json") return false;
+        if (lower.EndsWith(".rpy") || lower.EndsWith(".rpyc") || lower.EndsWith(".py")) return false;
+
         var ext = Path.GetExtension(name).ToLowerInvariant();
-        return ext is ".save" or ".sav" or ".json" or ".dat" or ".bin"
-               || name.Contains("save", StringComparison.OrdinalIgnoreCase);
+        if (ext is ".save" or ".sav") return true;
+        if (ext is ".json" or ".dat" or ".bin")
+        {
+            // Prefer names that look like slots / persistent
+            return lower.Contains("save", StringComparison.Ordinal)
+                   || lower.Contains("persistent", StringComparison.Ordinal)
+                   || lower.StartsWith("auto-", StringComparison.Ordinal)
+                   || char.IsDigit(lower[0]);
+        }
+        return lower.Contains("save", StringComparison.OrdinalIgnoreCase)
+               || lower.Contains("persistent", StringComparison.OrdinalIgnoreCase);
     }
 }

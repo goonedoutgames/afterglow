@@ -32,6 +32,7 @@ public sealed class LocalDatabase : IDisposable
         command.ExecuteNonQuery();
         TryAddColumn("ui_prefs", "library_setup_done", "INTEGER NOT NULL DEFAULT 0");
         TryAddColumn("ui_prefs", "datanodes_api_key", "TEXT");
+        TryAddColumn("ui_prefs", "library_card_scale", "REAL NOT NULL DEFAULT 1.0");
         TryAddColumn("download_jobs", "game_title", "TEXT");
     }
 
@@ -54,16 +55,21 @@ public sealed class LocalDatabase : IDisposable
             [("$mode", (int)value.Mode), ("$url", value.RemoteApiBase), ("$token", value.AuthToken), ("$client", value.ClientId)], cancellationToken);
 
     public async Task<UiPreferences> GetUiPreferencesAsync(CancellationToken cancellationToken = default) =>
-        await ReadSingleAsync("SELECT accent_hex, glass_blur, compact_density, library_root, download_concurrency, auto_extract, COALESCE(library_setup_done, 0) FROM ui_prefs WHERE id = 1", r => new UiPreferences
-        {
-            AccentHex = r.GetString(0), GlassBlur = r.GetDouble(1), CompactDensity = r.GetInt64(2) != 0,
-            LibraryRoot = r.GetString(3), DownloadConcurrency = r.GetInt32(4), AutoExtract = r.GetInt64(5) != 0,
-            LibrarySetupComplete = r.GetInt64(6) != 0
-        }, new UiPreferences(), cancellationToken);
+        await ReadSingleAsync(
+            "SELECT accent_hex, glass_blur, compact_density, library_root, download_concurrency, auto_extract, COALESCE(library_setup_done, 0), COALESCE(library_card_scale, 1.0) FROM ui_prefs WHERE id = 1",
+            r => new UiPreferences
+            {
+                AccentHex = r.GetString(0), GlassBlur = r.GetDouble(1), CompactDensity = r.GetInt64(2) != 0,
+                LibraryRoot = r.GetString(3), DownloadConcurrency = r.GetInt32(4), AutoExtract = r.GetInt64(5) != 0,
+                LibrarySetupComplete = r.GetInt64(6) != 0,
+                LibraryCardScale = r.IsDBNull(7) ? 1.0 : r.GetDouble(7)
+            }, new UiPreferences(), cancellationToken);
 
     public Task SaveUiPreferencesAsync(UiPreferences value, CancellationToken cancellationToken = default) =>
-        ExecuteAsync("INSERT INTO ui_prefs(id,accent_hex,glass_blur,compact_density,library_root,download_concurrency,auto_extract,library_setup_done,datanodes_api_key) VALUES(1,$accent,$blur,$compact,$root,$concurrency,$extract,$setup,NULL) ON CONFLICT(id) DO UPDATE SET accent_hex=$accent,glass_blur=$blur,compact_density=$compact,library_root=$root,download_concurrency=$concurrency,auto_extract=$extract,library_setup_done=$setup,datanodes_api_key=NULL",
-            [("$accent", value.AccentHex), ("$blur", value.GlassBlur), ("$compact", value.CompactDensity ? 1 : 0), ("$root", value.LibraryRoot), ("$concurrency", value.DownloadConcurrency), ("$extract", value.AutoExtract ? 1 : 0), ("$setup", value.LibrarySetupComplete ? 1 : 0)], cancellationToken);
+        ExecuteAsync(
+            "INSERT INTO ui_prefs(id,accent_hex,glass_blur,compact_density,library_root,download_concurrency,auto_extract,library_setup_done,datanodes_api_key,library_card_scale) VALUES(1,$accent,$blur,$compact,$root,$concurrency,$extract,$setup,NULL,$scale) ON CONFLICT(id) DO UPDATE SET accent_hex=$accent,glass_blur=$blur,compact_density=$compact,library_root=$root,download_concurrency=$concurrency,auto_extract=$extract,library_setup_done=$setup,datanodes_api_key=NULL,library_card_scale=$scale",
+            [("$accent", value.AccentHex), ("$blur", value.GlassBlur), ("$compact", value.CompactDensity ? 1 : 0), ("$root", value.LibraryRoot), ("$concurrency", value.DownloadConcurrency), ("$extract", value.AutoExtract ? 1 : 0), ("$setup", value.LibrarySetupComplete ? 1 : 0), ("$scale", value.LibraryCardScale)],
+            cancellationToken);
 
     public Task ResetConnectionAsync(CancellationToken cancellationToken = default) =>
         ExecuteAsync("INSERT INTO connection_config(id,mode,remote_api_base,auth_token,client_id) VALUES(1,$mode,NULL,NULL,$client) ON CONFLICT(id) DO UPDATE SET mode=$mode,remote_api_base=NULL,auth_token=NULL",

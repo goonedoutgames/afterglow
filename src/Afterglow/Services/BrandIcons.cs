@@ -18,25 +18,34 @@ public static class BrandIcons
     public const string UnknownPath =
         "M12,2 A10,10 0 1,0 12,22 A10,10 0 1,0 12,2 Z M11,7 L13,7 L13,13 L11,13 Z M11,15 L13,15 L13,17 L11,17 Z";
 
-    public static string PlatformPath(string? platform) => platform?.Trim().ToLowerInvariant() switch
+    public static string PlatformPath(string? platform) => CanonicalPlatformKey(platform) switch
     {
-        "windows" or "win" => WindowsPath,
+        "windows" => WindowsPath,
         "linux" => LinuxPath,
-        "mac" or "macos" or "osx" => MacPath,
+        "pc" or "windows/linux" => WindowsPath, // dual packs: show Windows mark (label spells both)
+        "mac" or "macos" or "osx" or "pc/mac" or "windows/mac" => MacPath,
         "ios" or "iphone" or "ipad" => IosPath,
         "android" => AndroidPath,
         _ => UnknownPath
     };
 
-    public static string PlatformLabel(string? platform) => platform?.Trim().ToLowerInvariant() switch
+    public static string PlatformLabel(string? platform)
     {
-        "windows" or "win" => "Windows",
-        "linux" => "Linux",
-        "mac" or "macos" or "osx" => "macOS",
-        "ios" or "iphone" or "ipad" => "iOS",
-        "android" => "Android",
-        _ => string.IsNullOrWhiteSpace(platform) ? "Unknown" : platform.Trim()
-    };
+        if (string.IsNullOrWhiteSpace(platform)) return "Unknown";
+        return CanonicalPlatformKey(platform) switch
+        {
+            "windows" => "Windows",
+            "linux" => "Linux",
+            "pc" => "PC",
+            "windows/linux" => "Windows/Linux",
+            "mac" or "macos" or "osx" => "macOS",
+            "pc/mac" => "PC/Mac",
+            "windows/mac" => "Windows/Mac",
+            "ios" or "iphone" or "ipad" => "iOS",
+            "android" => "Android",
+            _ => platform.Trim()
+        };
+    }
 
     public static string? FaviconUrl(string host)
     {
@@ -63,12 +72,28 @@ public static class BrandIcons
             : $"https://www.google.com/s2/favicons?domain={Uri.EscapeDataString(domain)}&sz=64";
     }
 
-    public static IBrush PlatformBrush(string? platform) => platform?.Trim().ToLowerInvariant() switch
+    public static IBrush PlatformBrush(string? platform) => CanonicalPlatformKey(platform) switch
     {
-        "windows" or "win" => new SolidColorBrush(Color.Parse("#0078D4")),
+        "windows" => new SolidColorBrush(Color.Parse("#0078D4")),
         "linux" => new SolidColorBrush(Color.Parse("#E3A018")),
-        "mac" or "macos" or "osx" or "ios" or "iphone" or "ipad" => new SolidColorBrush(Color.Parse("#A0A8B8")),
+        "pc" or "windows/linux" => new SolidColorBrush(Color.Parse("#5B8DEF")),
+        "mac" or "macos" or "osx" or "ios" or "iphone" or "ipad" or "pc/mac" or "windows/mac"
+            => new SolidColorBrush(Color.Parse("#A0A8B8")),
         "android" => new SolidColorBrush(Color.Parse("#3DDC84")),
         _ => new SolidColorBrush(Color.Parse("#6B7C90"))
     };
+
+    private static string CanonicalPlatformKey(string? platform)
+    {
+        var p = (platform ?? "").Trim().ToLowerInvariant().Replace(' ', '/');
+        while (p.Contains("//", StringComparison.Ordinal))
+            p = p.Replace("//", "/", StringComparison.Ordinal);
+        return p switch
+        {
+            "win" => "windows",
+            "macos" or "osx" or "mac os" or "mac os x" => "mac",
+            "win/linux" or "linux/windows" or "windows/linux" => "windows/linux",
+            _ => p
+        };
+    }
 }

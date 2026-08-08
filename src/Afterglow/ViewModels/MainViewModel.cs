@@ -8,6 +8,7 @@ using Afterglow.Core;
 using Afterglow.Core.Models;
 using Afterglow.Downloads;
 using Afterglow.HubSidecar;
+using Afterglow.Launcher;
 using Afterglow.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -449,6 +450,26 @@ public partial class LibraryItemViewModel : ViewModelBase
     public string? CoverUrl { get; init; }
     public List<string> ImageCandidates { get; init; } = [];
     [ObservableProperty] private Bitmap? _cover;
+    [ObservableProperty] private AnimatedMedia? _coverAnimation;
+}
+
+public partial class CloudSaveItemViewModel : ViewModelBase
+{
+    public required GameSave Save { get; init; }
+    public long Id => Save.Id;
+    public string Filename => Save.Filename;
+    public string UploadedLabel => DateFormats.FormatFriendly(Save.UploadedAt);
+    public string SizeLabel => Save.Size > 0 ? FormatSize(Save.Size) : "";
+    public string Meta => string.IsNullOrWhiteSpace(SizeLabel)
+        ? UploadedLabel
+        : $"{UploadedLabel} · {SizeLabel}";
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.0} KB",
+        _ => $"{bytes / (1024.0 * 1024.0):0.00} MB"
+    };
 }
 
 public partial class CatalogItemViewModel : ViewModelBase
@@ -493,23 +514,29 @@ public partial class LibraryViewModel : ViewModelBase
         _app = app;
         _media = media;
         _openGame = openGame;
+        ApplyCardSizeFromPrefs();
     }
 
     public ObservableCollection<LibraryItemViewModel> Games { get; } = [];
     public ObservableCollection<string> SortOptions { get; } = ["title", "updated", "rating", "playtime"];
     public ObservableCollection<string> PlayStatusOptions { get; } = ["", "unplayed", "playing", "completed", "on_hold", "dropped"];
     public ObservableCollection<string> InstallFilterOptions { get; } = ["All games", "Installed"];
+    public ObservableCollection<string> CardSizeOptions { get; } = ["Small", "Medium", "Large"];
 
     [ObservableProperty] private string _search = "";
     [ObservableProperty] private string _sort = "title";
     [ObservableProperty] private string _playStatus = "";
     [ObservableProperty] private string _installFilter = "All games";
+    [ObservableProperty] private string _cardSize = "Medium";
     [ObservableProperty] private string? _error;
     [ObservableProperty] private string? _mediaStatus;
     [ObservableProperty] private bool _busy;
     [ObservableProperty] private bool _gridView = true;
     [ObservableProperty] private LibraryItemViewModel? _selectedGame;
     [ObservableProperty] private string _libraryCountLabel = "";
+    [ObservableProperty] private double _cardWidth = 200;
+    [ObservableProperty] private double _cardHeight = 348;
+    [ObservableProperty] private double _metaFontSize = 12;
 
     public async Task RefreshAsync()
     {
@@ -571,6 +598,41 @@ public partial class LibraryViewModel : ViewModelBase
     }
 
     partial void OnInstallFilterChanged(string value) => ApplyInstallFilter();
+    partial void OnCardSizeChanged(string value) => _ = PersistCardSizeAsync();
+
+    private void ApplyCardSizeFromPrefs()
+    {
+        var scale = Math.Clamp(_app.Preferences.LibraryCardScale, 0.75, 1.5);
+        CardSize = scale switch
+        {
+            <= 0.85 => "Small",
+            >= 1.2 => "Large",
+            _ => "Medium"
+        };
+        ApplyCardMetrics(scale);
+    }
+
+    private async Task PersistCardSizeAsync()
+    {
+        var scale = CardSize switch
+        {
+            "Small" => 0.8,
+            "Large" => 1.25,
+            _ => 1.0
+        };
+        ApplyCardMetrics(scale);
+        var prefs = _app.Preferences;
+        prefs.LibraryCardScale = scale;
+        try { await _app.SavePreferencesAsync(prefs); }
+        catch { /* non-fatal */ }
+    }
+
+    private void ApplyCardMetrics(double scale)
+    {
+        CardWidth = Math.Round(200 * scale);
+        CardHeight = Math.Round(348 * scale);
+        MetaFontSize = Math.Clamp(11.5 * scale, 11, 15);
+    }
 
     private void ApplyInstallFilter()
     {
@@ -592,12 +654,14 @@ public partial class LibraryViewModel : ViewModelBase
     {
         foreach (var url in item.ImageCandidates.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            var bmp = await _media.GetAsync(url);
-            if (bmp is not null)
+            var media = await _media.GetMediaAsync(url);
+            if (media is null) continue;
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
             {
-                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => item.Cover = bmp);
-                return;
-            }
+                item.Cover = media.Preview;
+                item.CoverAnimation = media.IsAnimated ? media : null;
+            });
+            return;
         }
     }
 
@@ -1245,7 +1309,8 @@ public partial class SettingsViewModel : ViewModelBase
                 LibraryRoot = LibraryRoot,
                 DownloadConcurrency = _app.Preferences.DownloadConcurrency,
                 AutoExtract = _app.Preferences.AutoExtract,
-                LibrarySetupComplete = true
+                LibrarySetupComplete = true,
+                LibraryCardScale = _app.Preferences.LibraryCardScale
             });
             ThemeAccent.Apply(_app.Preferences.AccentHex);
             Status = "Local preferences saved.";
@@ -1451,6 +1516,7 @@ public partial class GameDetailViewModel : ViewModelBase
     [ObservableProperty] private bool _canSetGalleryCover;
     [ObservableProperty] private bool _isCustomCover;
     [ObservableProperty] private bool _downloadsExpanded = true;
+    [ObservableProperty] private bool _installExpanded = true;
     [ObservableProperty] private string _platformFilter = "All";
     [ObservableProperty] private string? _mediaStatus;
 
@@ -1458,11 +1524,15 @@ public partial class GameDetailViewModel : ViewModelBase
         ? "Collapsed while installed · click to expand"
         : "Links from the F95 thread";
     public string DownloadsChevron => DownloadsExpanded ? "▾" : "▸";
+    public string InstallCollapsedHint => IsInstalled
+        ? $"Installed · {InstallPath}"
+        : "Link a folder or extract an archive";
+    public string InstallChevron => InstallExpanded ? "▾" : "▸";
 
     public ObservableCollection<DownloadLinkItemViewModel> AllLinks { get; } = [];
     public ObservableCollection<DownloadLinkItemViewModel> Links { get; } = [];
-    public ObservableCollection<string> PlatformFilters { get; } = ["All", "Windows", "Linux", "Mac", "Android", "Unknown"];
-    public ObservableCollection<GameSave> Saves { get; } = [];
+    public ObservableCollection<string> PlatformFilters { get; } = ["All", "Windows", "Linux", "PC", "Mac", "Android", "Unknown"];
+    public ObservableCollection<CloudSaveItemViewModel> Saves { get; } = [];
     public ObservableCollection<ScreenshotThumbViewModel> Screenshots { get; } = [];
     public ObservableCollection<PlayStatusPillViewModel> StatusPills { get; } = [];
     public ObservableCollection<StarSlotViewModel> YourStars { get; } = [];
@@ -1520,12 +1590,14 @@ public partial class GameDetailViewModel : ViewModelBase
         RefreshStatusPills();
         RefreshStars();
         Saves.Clear();
-        foreach (var s in detail.Saves) Saves.Add(s);
+        foreach (var s in detail.Saves)
+            Saves.Add(new CloudSaveItemViewModel { Save = s });
         var install = await _app.Database.GetInstallAsync(detail.Game.Id);
         IsInstalled = install is not null;
         InstallPath = install?.InstallPath;
         ArchivePath = null;
         DownloadsExpanded = !IsInstalled;
+        InstallExpanded = !IsInstalled;
         IsCustomCover = detail.IsCustomCover;
 
         var coverCandidates = new List<string>();
@@ -1641,26 +1713,27 @@ public partial class GameDetailViewModel : ViewModelBase
     partial void OnUserRatingChanged(double? value) => RefreshStars();
     partial void OnF95RatingChanged(double? value) => RefreshStars();
     partial void OnPlayStatusChanged(string value) => RefreshStatusPills();
-    partial void OnIsInstalledChanged(bool value) => OnPropertyChanged(nameof(DownloadsCollapsedHint));
+    partial void OnIsInstalledChanged(bool value)
+    {
+        OnPropertyChanged(nameof(DownloadsCollapsedHint));
+        OnPropertyChanged(nameof(InstallCollapsedHint));
+    }
+    partial void OnInstallPathChanged(string? value) => OnPropertyChanged(nameof(InstallCollapsedHint));
     partial void OnDownloadsExpandedChanged(bool value) => OnPropertyChanged(nameof(DownloadsChevron));
+    partial void OnInstallExpandedChanged(bool value) => OnPropertyChanged(nameof(InstallChevron));
+    partial void OnPlatformFilterChanged(string value) => ApplyPlatformFilter();
     partial void OnBusyChanged(bool value)
     {
         if (IsGalleryOpen && GalleryIndex >= 0 && GalleryIndex < Screenshots.Count)
             CanSetGalleryCover = Screenshots[GalleryIndex].CanSetCover && !value;
     }
 
-    partial void OnPlatformFilterChanged(string value) => ApplyPlatformFilter();
-
     private void ApplyPlatformFilter()
     {
         Links.Clear();
         IEnumerable<DownloadLinkItemViewModel> q = AllLinks;
         if (!string.Equals(PlatformFilter, "All", StringComparison.OrdinalIgnoreCase))
-        {
-            q = PlatformFilter.Equals("Unknown", StringComparison.OrdinalIgnoreCase)
-                ? AllLinks.Where(l => string.IsNullOrWhiteSpace(l.Platform))
-                : AllLinks.Where(l => string.Equals(l.Platform, PlatformFilter, StringComparison.OrdinalIgnoreCase));
-        }
+            q = AllLinks.Where(l => DownloadLinkNormalizer.MatchesFilter(l.Platform, PlatformFilter));
         foreach (var link in q) Links.Add(link);
     }
 
@@ -1845,6 +1918,53 @@ public partial class GameDetailViewModel : ViewModelBase
 
     [RelayCommand]
     private void ToggleDownloads() => DownloadsExpanded = !DownloadsExpanded;
+
+    [RelayCommand]
+    private void ToggleInstall() => InstallExpanded = !InstallExpanded;
+
+    [RelayCommand]
+    private async Task SyncSaveAsync(CloudSaveItemViewModel? item)
+    {
+        if (item is null || Busy) return;
+        if (!IsInstalled || string.IsNullOrWhiteSpace(InstallPath))
+        {
+            Error = "Install the game on this PC before syncing a cloud save.";
+            _toasts.Warning(Error);
+            return;
+        }
+
+        Busy = true; Error = null;
+        try
+        {
+            var destDir = RenpySaveSync.ResolveLocalSaveDirectory(InstallPath);
+            var destPath = Path.Combine(destDir, item.Filename);
+            if (File.Exists(destPath))
+            {
+                var owner = (Avalonia.Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+                var overwrite = await ConfirmDialog.ShowAsync(
+                    owner,
+                    "Overwrite save?",
+                    $"A file named “{item.Filename}” already exists in:\n{destDir}\n\nOverwrite it with the cloud copy?",
+                    "Overwrite");
+                if (!overwrite) return;
+            }
+
+            var bytes = await _app.Hub.DownloadSaveAsync(GameId, item.Id);
+            if (bytes is null || bytes.Length == 0)
+                throw new InvalidOperationException("Hub returned an empty save file.");
+
+            Directory.CreateDirectory(destDir);
+            await File.WriteAllBytesAsync(destPath, bytes);
+            Status = $"Synced {item.Filename}";
+            _toasts.Success($"Save synced · {item.Filename}");
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+            _toasts.Error(ex.Message);
+        }
+        finally { Busy = false; }
+    }
 
     [RelayCommand]
     private async Task SetPlayStatusAsync(string? status)

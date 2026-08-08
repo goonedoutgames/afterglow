@@ -58,11 +58,17 @@
     <Setter Property="CornerRadius" Value="10" />
   </Style>
   <Style Selector="Border.toast">
-    <Setter Property="Background" Value="{DynamicResource GlassFillStrongBrush}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource GlassHighlightBrush}" />
+    <Setter Property="Background" Value="{DynamicResource ToastFillBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ToastBorderBrush}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="14" />
-    <Setter Property="BoxShadow" Value="0 16 40 0 #88000000, 0 1 0 0 #33FFFFFF" />
+    <Setter Property="BoxShadow" Value="0 18 48 0 #AA000000, 0 1 0 0 #44FFFFFF" />
+  </Style>
+  <Style Selector="Border.toast TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+  </Style>
+  <Style Selector="Border.toast TextBlock.caption">
+    <Setter Property="Foreground" Value="#C8D2E0" />
   </Style>
 
   <Style Selector="Button">
