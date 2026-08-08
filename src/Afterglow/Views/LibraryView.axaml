@@ -7,14 +7,17 @@
     <Border DockPanel.Dock="Top" Classes="glass" Padding="14,12" Margin="8,8,8,4" CornerRadius="16">
       <StackPanel Spacing="8">
         <StackPanel Orientation="Horizontal" Spacing="8">
-          <TextBox Width="240" PlaceholderText="Search library…" Text="{Binding Search}" />
-          <ComboBox Width="130" ItemsSource="{Binding SortOptions}" SelectedItem="{Binding Sort}" />
-          <ComboBox Width="140" ItemsSource="{Binding PlayStatusOptions}" SelectedItem="{Binding PlayStatus}" />
+          <TextBox Width="220" PlaceholderText="Search library…" Text="{Binding Search}" />
+          <ComboBox Width="120" ItemsSource="{Binding SortOptions}" SelectedItem="{Binding Sort}" />
+          <ComboBox Width="130" ItemsSource="{Binding PlayStatusOptions}" SelectedItem="{Binding PlayStatus}" />
+          <ComboBox Width="130" ItemsSource="{Binding InstallFilterOptions}" SelectedItem="{Binding InstallFilter}"
+                    ToolTip.Tip="Steam-style: show all library games or only ones installed on this PC" />
           <Button Classes="accent" Content="Search" Command="{Binding SearchCommand}" />
           <Button Classes="ghost" Content="Check updates" Command="{Binding CheckUpdatesCommand}" IsEnabled="{Binding !Busy}" />
           <Button Classes="ghost" Content="Grid" Command="{Binding ToggleViewCommand}" IsVisible="{Binding !GridView}" />
           <Button Classes="ghost" Content="List" Command="{Binding ToggleViewCommand}" IsVisible="{Binding GridView}" />
         </StackPanel>
+        <TextBlock Text="{Binding LibraryCountLabel}" Classes="caption" />
         <TextBlock Text="{Binding MediaStatus}" Classes="caption" TextWrapping="Wrap" />
         <TextBlock Text="{Binding Error}" Foreground="#E35D6A" TextWrapping="Wrap" />
       </StackPanel>
@@ -31,22 +34,29 @@
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:LibraryItemViewModel">
-            <Border Classes="game-card-host" Width="196" Height="292"
+            <Border Classes="game-card-host" Width="200" Height="340"
                     PointerPressed="GameCard_PointerPressed" Tag="{Binding}">
               <Border Classes="game-card">
                 <Border Classes="game-card-face">
                   <DockPanel>
                     <Border DockPanel.Dock="Bottom" Classes="game-card-meta" Padding="10,8">
-                      <StackPanel Spacing="2">
+                      <StackPanel Spacing="3">
                         <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                         <TextBlock Text="{Binding Subtitle}" Classes="caption" TextTrimming="CharacterEllipsis" />
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                          <TextBlock Text="{Binding PlaytimeLabel}" Classes="caption" />
-                          <Border Background="{DynamicResource AccentBrush}" CornerRadius="6" Padding="6,2"
-                                  IsVisible="{Binding IsInstalled}" Opacity="0.9">
-                            <TextBlock Text="Installed" FontSize="10" Foreground="White" />
-                          </Border>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <TextBlock Text="{Binding PlaytimeLabel}" Classes="caption" Opacity="0.9" />
+                          <TextBlock Text="{Binding PlayStatusLabel}" Classes="caption" Opacity="0.85"
+                                     IsVisible="{Binding PlayStatusLabel, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                         </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <TextBlock Text="{Binding UserRatingLabel}" Classes="caption" FontSize="11" />
+                          <TextBlock Text="{Binding F95RatingLabel}" Classes="caption" FontSize="11" Opacity="0.85" />
+                        </StackPanel>
+                        <Border Background="{DynamicResource AccentBrush}" CornerRadius="6" Padding="6,2"
+                                HorizontalAlignment="Left"
+                                IsVisible="{Binding IsInstalled}" Opacity="0.95">
+                          <TextBlock Text="Installed" FontSize="10" Foreground="White" />
+                        </Border>
                       </StackPanel>
                     </Border>
                     <Panel>
@@ -74,12 +84,17 @@
                 <Image Source="{Binding Cover}" Stretch="UniformToFill"
                        IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
               </Border>
-              <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center">
+              <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="2">
                 <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
                 <TextBlock Text="{Binding Subtitle}" Classes="muted" FontSize="12" />
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <TextBlock Text="{Binding PlaytimeLabel}" Classes="caption" />
+                  <TextBlock Text="{Binding UserRatingLabel}" Classes="caption" />
+                  <TextBlock Text="{Binding F95RatingLabel}" Classes="caption" Opacity="0.85" />
+                  <TextBlock Text="{Binding PlayStatusLabel}" Classes="caption"
+                             IsVisible="{Binding PlayStatusLabel, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
               </StackPanel>
-              <TextBlock Grid.Column="2" Text="{Binding PlaytimeLabel}" Classes="muted" Margin="12,0"
-                         VerticalAlignment="Center" />
               <Border Grid.Column="3" Background="{DynamicResource AccentBrush}" CornerRadius="6" Padding="8,4"
                       IsVisible="{Binding IsInstalled}" VerticalAlignment="Center" Opacity="0.9">
                 <TextBlock Text="Installed" FontSize="11" Foreground="White" />

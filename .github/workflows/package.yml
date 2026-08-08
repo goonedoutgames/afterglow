@@ -1,7 +1,5 @@
 name: Package
 
-# Windows is required. Linux is best-effort: failures never block the Windows
-# artifact/release, and a successful Linux build is attached alongside Windows.
 on:
   push:
     branches: [main]
@@ -43,7 +41,7 @@ jobs:
       - name: Restore
         run: dotnet restore Afterglow.sln
 
-      - name: Build (windows TFM)
+      - name: Build
         run: dotnet build src/Afterglow/Afterglow.csproj -c Release -f net8.0-windows --no-restore
 
       - name: Resolve hub Windows sidecar
@@ -113,96 +111,9 @@ jobs:
           path: Afterglow-windows-x64.zip
           if-no-files-found: error
 
-  build-linux:
-    runs-on: ubuntu-latest
-    # Secondary: never fail the workflow / Windows release path.
-    # Note: with continue-on-error, needs.*.result is always "success" even on failure —
-    # so release uses the packaged output below, not result.
-    continue-on-error: true
-    outputs:
-      packaged: ${{ steps.done.outputs.packaged }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "8.0.x"
-
-      - name: Restore
-        run: dotnet restore Afterglow.sln
-
-      - name: Build (linux TFM)
-        run: dotnet build src/Afterglow/Afterglow.csproj -c Release -f net8.0 --no-restore
-
-      - name: Resolve hub Linux sidecar (optional)
-        id: hub
-        env:
-          GH_TOKEN: ${{ secrets.HUB_GITHUB_TOKEN || github.token }}
-          HUB_TAG: ${{ github.event.inputs.hub_tag }}
-          HUB_REPO: ${{ vars.HUB_REPO || 'goonedoutgames/avn-hub' }}
-        run: |
-          set -euo pipefail
-          tag="${HUB_TAG:-}"
-          if [ -z "$tag" ]; then
-            tag="$(gh release view --repo "$HUB_REPO" --json tagName --jq .tagName)"
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          mkdir -p sidecar-dl
-          # Prefer dedicated linux asset; tolerate missing (Remote-only package).
-          if gh release download "$tag" --repo "$HUB_REPO" \
-               --pattern "avn-hub-linux-x64" --dir sidecar-dl --clobber; then
-            echo "path=sidecar-dl/avn-hub-linux-x64" >> "$GITHUB_OUTPUT"
-          elif gh release download "$tag" --repo "$HUB_REPO" \
-               --pattern "avn-hub" --dir sidecar-dl --clobber; then
-            echo "path=sidecar-dl/avn-hub" >> "$GITHUB_OUTPUT"
-          else
-            echo "path=" >> "$GITHUB_OUTPUT"
-            echo "No Linux hub sidecar on $tag — packaging Without Local binary."
-          fi
-
-      - name: Publish Linux package
-        env:
-          AvnHubBin: ${{ steps.hub.outputs.path }}
-        run: |
-          chmod +x packaging/publish-linux.sh
-          if [ -n "${AvnHubBin:-}" ] && [ -f "$AvnHubBin" ]; then
-            AvnHubBin="$AvnHubBin" ./packaging/publish-linux.sh
-          else
-            ./packaging/publish-linux.sh
-          fi
-
-      - name: Sidecar provenance
-        run: |
-          cat > publish/linux/sidecar/SIDECAR.txt <<EOF
-          Bundled AVN Hub sidecar (Linux)
-          ===============================
-          Source repo : ${{ vars.HUB_REPO || 'goonedoutgames/avn-hub' }}
-          Release tag : ${{ steps.hub.outputs.tag }}
-          Asset       : ${{ steps.hub.outputs.path || '(none — Remote mode only)' }}
-          Note        : Afterglow Browser (WebView2) is Windows-only.
-          Built at    : $(date -Iseconds)
-          EOF
-
-      - name: Tar Linux package
-        run: |
-          tar -C publish/linux -czf Afterglow-linux-x64.tar.gz .
-
-      - name: Upload Linux artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Afterglow-linux-x64
-          path: Afterglow-linux-x64.tar.gz
-          if-no-files-found: error
-
-      - name: Mark Linux package ready
-        id: done
-        run: echo "packaged=true" >> "$GITHUB_OUTPUT"
-
   release:
-    needs: [build-windows, build-linux]
-    if: always() && needs.build-windows.result == 'success' && startsWith(github.ref, 'refs/tags/v')
+    needs: [build-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - name: Download Windows artifact
@@ -211,24 +122,14 @@ jobs:
           name: Afterglow-windows-x64
           path: dist
 
-      - name: Download Linux artifact (if present)
-        if: needs.build-linux.outputs.packaged == 'true'
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: Afterglow-linux-x64
-          path: dist
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           generate_release_notes: true
-          fail_on_unmatched_files: false
           body: |
-            ## Afterglow desktop
+            ## Afterglow desktop (Windows)
 
-            - **Windows (required):** `Afterglow-windows-x64.zip` — includes Afterglow Browser (WebView2) + Windows hub sidecar when available.
-            - **Linux (best-effort):** `Afterglow-linux-x64.tar.gz` — attached only when the Linux job succeeds. Interactive hoster browser is Windows-only; Local mode needs a Linux `avn-hub` sidecar when bundled.
+            `Afterglow-windows-x64.zip` — includes Afterglow Browser (WebView2) and the Windows hub sidecar when available.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

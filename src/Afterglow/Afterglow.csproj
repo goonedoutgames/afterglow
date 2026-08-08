@@ -1,18 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFrameworks>net8.0;net8.0-windows</TargetFrameworks>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>Assets\avalonia-logo.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Magick.NET advisory noise; used only to decode hub/F95 cover bytes we already store. -->
     <NoWarn>$(NoWarn);NU1901;NU1902;NU1903</NoWarn>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="$(TargetFramework.Contains('-windows'))">
-    <OutputType>WinExe</OutputType>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
-    <DefineConstants>$(DefineConstants);AFTERGLOW_WINDOWS</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -50,10 +45,6 @@
     <ProjectReference Include="..\Afterglow.Downloads\Afterglow.Downloads.csproj" />
     <ProjectReference Include="..\Afterglow.Launcher\Afterglow.Launcher.csproj" />
     <ProjectReference Include="..\Afterglow.HubSidecar\Afterglow.HubSidecar.csproj" />
-  </ItemGroup>
-
-  <!-- WebView2 Afterglow Browser is Windows-only -->
-  <ItemGroup Condition="$(TargetFramework.Contains('-windows'))">
     <ProjectReference Include="..\Afterglow.BrowserHost\Afterglow.BrowserHost.csproj" />
   </ItemGroup>
 </Project>

@@ -150,27 +150,11 @@ public static class ExeDetector
     {
         if (!Directory.Exists(directory)) return null;
 
-        // Prefer native launchers when present (Linux Ren'Py ships renpy.sh).
-        var renpySh = Directory.EnumerateFiles(directory, "renpy.sh", SearchOption.AllDirectories).FirstOrDefault();
-        if (renpySh is not null) return renpySh;
-
         var exes = Directory.EnumerateFiles(directory, "*.exe", SearchOption.AllDirectories)
             .Where(x => !Path.GetFileName(x).Contains("uninstall", StringComparison.OrdinalIgnoreCase))
             .OrderBy(x => x.Count(c => c == Path.DirectorySeparatorChar || c == Path.AltDirectorySeparatorChar))
             .ToList();
-        if (exes.Count > 0) return exes[0];
-
-        if (!OperatingSystem.IsWindows())
-        {
-            // Common Linux game / Ren'Py launchers under the install tree.
-            foreach (var name in new[] { "linux", "Linux", "start.sh", "run.sh", "launch.sh" })
-            {
-                var hit = Directory.EnumerateFiles(directory, name, SearchOption.AllDirectories).FirstOrDefault();
-                if (hit is not null) return hit;
-            }
-        }
-
-        return null;
+        return exes.Count > 0 ? exes[0] : null;
     }
 }
 

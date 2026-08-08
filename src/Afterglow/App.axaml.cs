@@ -10,10 +10,8 @@ using Afterglow.LocalStore;
 using Afterglow.Services;
 using Afterglow.ViewModels;
 using Afterglow.Views;
-using Microsoft.Extensions.DependencyInjection;
-#if AFTERGLOW_WINDOWS
 using Afterglow.BrowserHost;
-#endif
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Afterglow;
 
@@ -34,11 +32,7 @@ public partial class App : Application
         services.AddSingleton(_ => new HubApiClient(new Uri("http://127.0.0.1:18080/")));
         services.AddSingleton<HubSidecarProcess>();
         services.AddSingleton(sp => new DownloadManager(sp.GetRequiredService<LocalDatabase>()));
-#if AFTERGLOW_WINDOWS
         services.AddSingleton<IInteractiveDownloadBrowser, InteractiveDownloadBrowser>();
-#else
-        services.AddSingleton<IInteractiveDownloadBrowser, UnsupportedInteractiveDownloadBrowser>();
-#endif
         services.AddSingleton(sp => new GameLauncher(sp.GetRequiredService<LocalDatabase>()));
         services.AddSingleton(sp => new PlaytimeSyncService(
             sp.GetRequiredService<LocalDatabase>(),

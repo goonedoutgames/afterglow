@@ -10,7 +10,7 @@ namespace Afterglow.HubSidecar;
 public static class SidecarBootstrap
 {
     public static string SidecarExePath =>
-        Path.Combine(AppPaths.SidecarDir, OperatingSystem.IsWindows() ? "avn-hub.exe" : "avn-hub");
+        Path.Combine(AppPaths.SidecarDir, "avn-hub.exe");
 
     public static string? FindExistingExecutable()
     {
@@ -24,7 +24,7 @@ public static class SidecarBootstrap
         foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
         {
             if (string.IsNullOrWhiteSpace(directory)) continue;
-            foreach (var name in ExeNames())
+            foreach (var name in ExeNames)
             {
                 var candidate = Path.Combine(directory.Trim('"'), name);
                 if (File.Exists(candidate)) return candidate;
@@ -63,7 +63,6 @@ public static class SidecarBootstrap
                 {
                     progress?.Report($"Copying {existing} → sidecar…");
                     File.Copy(existing, SidecarExePath, overwrite: true);
-                    EnsureUnixExecutable(SidecarExePath);
                 }
                 progress?.Report($"Using {SidecarExePath}");
                 return SidecarExePath;
@@ -80,17 +79,13 @@ public static class SidecarBootstrap
                 {
                     progress?.Report($"No avn-hub repo found to rebuild; keeping {existing}");
                     if (!PathsEqual(existing, SidecarExePath))
-                    {
                         File.Copy(existing, SidecarExePath, overwrite: true);
-                        EnsureUnixExecutable(SidecarExePath);
-                    }
                     return SidecarExePath;
                 }
             }
 
-            var binaryName = Path.GetFileName(SidecarExePath);
             throw new FileNotFoundException(
-                $"Could not find {binaryName}. Place it in the sidecar folder, set AFTERGLOW_AVN_HUB_PATH, " +
+                "Could not find avn-hub.exe. Place it in the sidecar folder, set AFTERGLOW_AVN_HUB_PATH, " +
                 "or keep the avn-hub repo next to avn-hub-desktop so Afterglow can build it.");
         }
 
@@ -98,12 +93,10 @@ public static class SidecarBootstrap
         await CargoBuildAsync(repo, progress, cancellationToken);
 
         var built = CandidateDevBinaries(repo).FirstOrDefault(File.Exists)
-            ?? throw new FileNotFoundException(
-                $"cargo build finished but {Path.GetFileName(SidecarExePath)} was not found under target/.");
+            ?? throw new FileNotFoundException("cargo build finished but avn-hub.exe was not found under target/.");
 
         progress?.Report($"Installing {built} into sidecar…");
         File.Copy(built, SidecarExePath, overwrite: true);
-        EnsureUnixExecutable(SidecarExePath);
         progress?.Report("Sidecar ready.");
         return SidecarExePath;
     }
@@ -176,18 +169,17 @@ public static class SidecarBootstrap
         foreach (var root in roots)
         {
             foreach (var config in new[] { "release", "debug" })
-            foreach (var name in ExeNames())
+            foreach (var name in ExeNames)
                 yield return Path.Combine(root, "target", config, name);
         }
     }
 
-    private static IEnumerable<string> ExeNames() =>
-        OperatingSystem.IsWindows() ? ["avn-hub.exe", "avn-hub"] : ["avn-hub"];
+    private static readonly string[] ExeNames = ["avn-hub.exe", "avn-hub"];
 
     private static async Task CargoBuildAsync(string repoRoot, IProgress<string>? progress, CancellationToken cancellationToken)
     {
         var cargo = FindCargo() ?? throw new FileNotFoundException(
-            $"cargo was not found on PATH. Install Rust (rustup) or place a prebuilt {Path.GetFileName(SidecarExePath)} in the sidecar folder.");
+            "cargo was not found on PATH. Install Rust (rustup) or place a prebuilt avn-hub.exe in the sidecar folder.");
 
         var psi = new ProcessStartInfo(cargo)
         {
@@ -214,7 +206,7 @@ public static class SidecarBootstrap
 
     private static string? FindCargo()
     {
-        foreach (var name in OperatingSystem.IsWindows() ? new[] { "cargo.exe", "cargo" } : new[] { "cargo" })
+        foreach (var name in new[] { "cargo.exe", "cargo" })
         {
             foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
             {
@@ -224,29 +216,10 @@ public static class SidecarBootstrap
         }
 
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var rustupCargo = Path.Combine(home, ".cargo", "bin", OperatingSystem.IsWindows() ? "cargo.exe" : "cargo");
+        var rustupCargo = Path.Combine(home, ".cargo", "bin", "cargo.exe");
         return File.Exists(rustupCargo) ? rustupCargo : null;
     }
 
     private static bool PathsEqual(string a, string b) =>
-        string.Equals(
-            Path.GetFullPath(a),
-            Path.GetFullPath(b),
-            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
-
-    private static void EnsureUnixExecutable(string path)
-    {
-        if (OperatingSystem.IsWindows()) return;
-        try
-        {
-            var mode = File.GetUnixFileMode(path);
-            var exec = UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
-            if ((mode & exec) != exec)
-                File.SetUnixFileMode(path, mode | exec);
-        }
-        catch
-        {
-            // Non-Unix or unsupported FS — Process.Start may still work if the bit was already set.
-        }
-    }
+        string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
 }

@@ -164,7 +164,7 @@
     <!-- App-wide toasts (Steam-like cards for downloads) -->
     <ItemsControl ItemsSource="{Binding Toasts.Items}"
                   HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                  Margin="0,0,24,24" IsHitTestVisible="True" MaxWidth="420" ZIndex="100">
+                  Margin="0,0,24,24" IsHitTestVisible="True" MaxWidth="420" ZIndex="1000">
       <ItemsControl.ItemsPanel>
         <ItemsPanelTemplate>
           <StackPanel Spacing="10" />

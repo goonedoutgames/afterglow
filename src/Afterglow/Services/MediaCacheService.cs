@@ -73,8 +73,19 @@ public sealed class MediaCacheService
         var key = url.Trim();
         if (preferAnimation && _animated.TryGetValue(key, out var animatedHit))
         {
-            SuccessCount++;
-            return animatedHit;
+            if (animatedHit.IsAnimated)
+            {
+                SuccessCount++;
+                return animatedHit;
+            }
+            // Stale static entry — may be a GIF that was loaded without animation.
+            var maybeGifPath = CachePathFor(key);
+            if (!LooksLikeGifUrl(key) && !(File.Exists(maybeGifPath) && LooksLikeGif(maybeGifPath)))
+            {
+                SuccessCount++;
+                return animatedHit;
+            }
+            _animated.TryRemove(key, out _);
         }
 
         if (!preferAnimation && _bitmaps.TryGetValue(key, out var bmpHit))
@@ -85,8 +96,18 @@ public sealed class MediaCacheService
 
         if (_animated.TryGetValue(key, out animatedHit))
         {
-            SuccessCount++;
-            return animatedHit;
+            if (!preferAnimation || animatedHit.IsAnimated)
+            {
+                SuccessCount++;
+                return animatedHit;
+            }
+            var maybeGifPath = CachePathFor(key);
+            if (!LooksLikeGifUrl(key) && !(File.Exists(maybeGifPath) && LooksLikeGif(maybeGifPath)))
+            {
+                SuccessCount++;
+                return animatedHit;
+            }
+            _animated.TryRemove(key, out _);
         }
 
         var gate = _locks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
@@ -95,8 +116,18 @@ public sealed class MediaCacheService
         {
             if (preferAnimation && _animated.TryGetValue(key, out animatedHit))
             {
-                SuccessCount++;
-                return animatedHit;
+                if (animatedHit.IsAnimated)
+                {
+                    SuccessCount++;
+                    return animatedHit;
+                }
+                var maybeGifPath = CachePathFor(key);
+                if (!LooksLikeGifUrl(key) && !(File.Exists(maybeGifPath) && LooksLikeGif(maybeGifPath)))
+                {
+                    SuccessCount++;
+                    return animatedHit;
+                }
+                _animated.TryRemove(key, out _);
             }
 
             if (_bitmaps.TryGetValue(key, out bmpHit) && !preferAnimation)
@@ -167,7 +198,9 @@ public sealed class MediaCacheService
                 {
                     var media = new AnimatedMedia { Preview = fromPng };
                     _bitmaps[key] = fromPng;
-                    _animated[key] = media;
+                    // Don't poison GIF animation cache with a static Magick/PNG convert.
+                    if (!(isGif && !preferAnimation))
+                        _animated[key] = media;
                     SuccessCount++;
                     return media;
                 }
@@ -209,7 +242,8 @@ public sealed class MediaCacheService
 
             var result = new AnimatedMedia { Preview = bitmap };
             _bitmaps[key] = bitmap;
-            _animated[key] = result;
+            if (!(isGif && !preferAnimation))
+                _animated[key] = result;
             SuccessCount++;
             return result;
         }
@@ -267,6 +301,21 @@ public sealed class MediaCacheService
         using var image = new MagickImage(sourcePath);
         image.Format = MagickFormat.Png;
         image.Write(pngPath);
+    }
+
+    private static bool LooksLikeGifUrl(string url)
+    {
+        try
+        {
+            var path = new Uri(url, UriKind.RelativeOrAbsolute).IsAbsoluteUri
+                ? new Uri(url).AbsolutePath
+                : url;
+            return string.Equals(Path.GetExtension(path), ".gif", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return url.Contains(".gif", StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     private static bool LooksLikeGif(string path)

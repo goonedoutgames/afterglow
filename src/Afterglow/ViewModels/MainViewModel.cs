@@ -441,6 +441,11 @@ public partial class LibraryItemViewModel : ViewModelBase
     public string Subtitle { get; init; } = "";
     public bool IsInstalled { get; init; }
     public string PlaytimeLabel { get; init; } = "";
+    public string PlayStatusLabel { get; init; } = "";
+    public string UserRatingLabel { get; init; } = "";
+    public string F95RatingLabel { get; init; } = "";
+    public bool HasUserRating { get; init; }
+    public bool HasF95Rating { get; init; }
     public string? CoverUrl { get; init; }
     public List<string> ImageCandidates { get; init; } = [];
     [ObservableProperty] private Bitmap? _cover;
@@ -481,6 +486,7 @@ public partial class LibraryViewModel : ViewModelBase
     private readonly AfterglowAppService _app;
     private readonly MediaCacheService _media;
     private readonly Func<long, Task> _openGame;
+    private readonly List<LibraryItemViewModel> _allGames = [];
 
     public LibraryViewModel(AfterglowAppService app, MediaCacheService media, Func<long, Task> openGame)
     {
@@ -492,15 +498,18 @@ public partial class LibraryViewModel : ViewModelBase
     public ObservableCollection<LibraryItemViewModel> Games { get; } = [];
     public ObservableCollection<string> SortOptions { get; } = ["title", "updated", "rating", "playtime"];
     public ObservableCollection<string> PlayStatusOptions { get; } = ["", "unplayed", "playing", "completed", "on_hold", "dropped"];
+    public ObservableCollection<string> InstallFilterOptions { get; } = ["All games", "Installed"];
 
     [ObservableProperty] private string _search = "";
     [ObservableProperty] private string _sort = "title";
     [ObservableProperty] private string _playStatus = "";
+    [ObservableProperty] private string _installFilter = "All games";
     [ObservableProperty] private string? _error;
     [ObservableProperty] private string? _mediaStatus;
     [ObservableProperty] private bool _busy;
     [ObservableProperty] private bool _gridView = true;
     [ObservableProperty] private LibraryItemViewModel? _selectedGame;
+    [ObservableProperty] private string _libraryCountLabel = "";
 
     public async Task RefreshAsync()
     {
@@ -513,38 +522,70 @@ public partial class LibraryViewModel : ViewModelBase
                 string.IsNullOrWhiteSpace(PlayStatus) ? null : PlayStatus,
                 string.IsNullOrWhiteSpace(Sort) ? null : Sort);
             var installs = (await _app.Database.GetInstallsAsync()).ToDictionary(x => x.GameId);
-            Games.Clear();
+            _allGames.Clear();
             foreach (var g in list)
             {
                 installs.TryGetValue(g.Game.Id, out var install);
-                var hours = g.Game.PlaytimeSeconds / 3600.0;
                 var candidates = new List<string>();
                 if (!string.IsNullOrWhiteSpace(g.CoverUrl)) candidates.Add(g.CoverUrl);
                 candidates.AddRange(g.PreviewUrls.Where(x => !string.IsNullOrWhiteSpace(x)));
+                var playStatus = (g.Game.PlayStatus ?? "unplayed").Trim().ToLowerInvariant();
+                var playStatusLabel = playStatus switch
+                {
+                    "playing" => "Playing",
+                    "completed" => "Completed",
+                    "dropped" => "Dropped",
+                    "on_hold" or "on-hold" => "On hold",
+                    _ => ""
+                };
                 var item = new LibraryItemViewModel
                 {
                     Id = g.Game.Id,
                     Title = g.Game.Title,
                     Subtitle = string.Join(" · ", new[] { g.Game.Developer, g.Game.Version }.Where(x => !string.IsNullOrWhiteSpace(x))),
                     IsInstalled = install is not null,
-                    PlaytimeLabel = hours > 0 ? $"{hours:0.0}h" : "",
+                    PlaytimeLabel = LibraryPaths.FormatPlaytime(g.Game.PlaytimeSeconds),
+                    PlayStatusLabel = playStatusLabel,
+                    HasUserRating = g.Game.UserRating is > 0,
+                    UserRatingLabel = g.Game.UserRating is > 0 ? $"You ★ {g.Game.UserRating:0.0}" : "You —",
+                    HasF95Rating = g.Game.Rating is > 0,
+                    F95RatingLabel = g.Game.Rating is > 0 ? $"F95 ★ {g.Game.Rating:0.0}" : "F95 —",
                     CoverUrl = g.CoverUrl,
                     ImageCandidates = candidates
                 };
-                Games.Add(item);
+                _allGames.Add(item);
             }
 
-            var missingUrls = Games.Count(g => g.ImageCandidates.Count == 0);
-            // Load covers concurrently (throttled by await-in-loop batches)
-            var tasks = Games.Select(LoadCoverAsync).ToArray();
+            ApplyInstallFilter();
+
+            var missingUrls = _allGames.Count(g => g.ImageCandidates.Count == 0);
+            var tasks = _allGames.Select(LoadCoverAsync).ToArray();
             await Task.WhenAll(tasks);
 
             MediaStatus = missingUrls > 0
-                ? $"Covers {_media.SuccessCount}/{Games.Count} · {missingUrls} games have no cover_url from hub. {_media.LastError}"
-                : $"Covers {_media.SuccessCount}/{Games.Count} loaded." + (_media.LastError is null ? "" : $" Last issue: {_media.LastError}");
+                ? $"Covers {_media.SuccessCount}/{_allGames.Count} · {missingUrls} games have no cover_url from hub. {_media.LastError}"
+                : $"Covers {_media.SuccessCount}/{_allGames.Count} loaded." + (_media.LastError is null ? "" : $" Last issue: {_media.LastError}");
         }
         catch (Exception ex) { Error = ex.Message; MediaStatus = null; }
         finally { Busy = false; }
+    }
+
+    partial void OnInstallFilterChanged(string value) => ApplyInstallFilter();
+
+    private void ApplyInstallFilter()
+    {
+        var installedOnly = string.Equals(InstallFilter, "Installed", StringComparison.OrdinalIgnoreCase);
+        Games.Clear();
+        foreach (var g in _allGames)
+        {
+            if (installedOnly && !g.IsInstalled) continue;
+            Games.Add(g);
+        }
+
+        var installed = _allGames.Count(g => g.IsInstalled);
+        LibraryCountLabel = installedOnly
+            ? $"{Games.Count} installed"
+            : $"{Games.Count} games · {installed} installed";
     }
 
     private async Task LoadCoverAsync(LibraryItemViewModel item)
@@ -1397,6 +1438,7 @@ public partial class GameDetailViewModel : ViewModelBase
     [ObservableProperty] private string? _error;
     [ObservableProperty] private bool _busy;
     [ObservableProperty] private Bitmap? _cover;
+    [ObservableProperty] private AnimatedMedia? _coverAnimation;
     [ObservableProperty] private Bitmap? _selectedScreenshot;
     [ObservableProperty] private AnimatedMedia? _selectedAnimation;
     [ObservableProperty] private bool _hasScreenshots;
@@ -1405,6 +1447,7 @@ public partial class GameDetailViewModel : ViewModelBase
     [ObservableProperty] private Bitmap? _galleryImage;
     [ObservableProperty] private AnimatedMedia? _galleryAnimation;
     [ObservableProperty] private string _galleryCaption = "";
+    [ObservableProperty] private string? _galleryFeedback;
     [ObservableProperty] private bool _canSetGalleryCover;
     [ObservableProperty] private bool _isCustomCover;
     [ObservableProperty] private bool _downloadsExpanded = true;
@@ -1442,6 +1485,7 @@ public partial class GameDetailViewModel : ViewModelBase
         GameId = id;
         Busy = true; Error = null; MediaStatus = null;
         Cover = null;
+        CoverAnimation = null;
         SelectedScreenshot = null;
         Screenshots.Clear();
         HasScreenshots = false;
@@ -1624,12 +1668,14 @@ public partial class GameDetailViewModel : ViewModelBase
     {
         foreach (var url in urls.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            var bmp = await _media.GetAsync(url);
-            if (bmp is not null)
+            var media = await _media.GetMediaAsync(url);
+            if (media is null) continue;
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
             {
-                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => Cover = bmp);
-                return;
-            }
+                Cover = media.Preview;
+                CoverAnimation = media.IsAnimated ? media : null;
+            });
+            return;
         }
     }
 
@@ -1695,6 +1741,7 @@ public partial class GameDetailViewModel : ViewModelBase
     {
         IsGalleryOpen = false;
         GalleryAnimation = null;
+        GalleryFeedback = null;
     }
 
     [RelayCommand]
@@ -1724,6 +1771,7 @@ public partial class GameDetailViewModel : ViewModelBase
         GalleryAnimation = shot.Animation;
         GalleryCaption = $"{index + 1} / {Screenshots.Count}"
             + (shot.IsAnimated ? " · GIF" : "");
+        GalleryFeedback = null;
         CanSetGalleryCover = shot.CanSetCover && !Busy;
         for (var i = 0; i < Screenshots.Count; i++)
             Screenshots[i].IsSelected = i == index;
@@ -1735,19 +1783,37 @@ public partial class GameDetailViewModel : ViewModelBase
     {
         if (!CanSetGalleryCover || Busy) return;
         var index = GalleryIndex;
-        Busy = true; Error = null;
+        Busy = true; Error = null; GalleryFeedback = "Setting cover…";
         try
         {
             var detail = await _app.Hub.SetCoverFromScreenshotAsync(GameId, index);
-            await ApplyDetailAsync(detail);
+            IsCustomCover = detail.IsCustomCover;
+
+            // Prefer already-decoded gallery media (keeps GIF animation; avoids lightbox flash).
+            if (index >= 0 && index < Screenshots.Count)
+            {
+                var shot = Screenshots[index];
+                if (shot.Image is not null)
+                {
+                    Cover = shot.Image;
+                    CoverAnimation = shot.Animation;
+                }
+            }
+
+            var coverCandidates = new List<string>();
+            if (!string.IsNullOrWhiteSpace(detail.CoverUrl)) coverCandidates.Add(detail.CoverUrl!);
+            if (!string.IsNullOrWhiteSpace(detail.CoverFullUrl)) coverCandidates.Add(detail.CoverFullUrl!);
+            if (coverCandidates.Count > 0)
+                await LoadCoverAsync(coverCandidates);
+
             Status = "Cover updated";
-            _toasts.Success("Cover updated");
-            if (HasScreenshots)
-                OpenGalleryAt(Math.Min(index, Screenshots.Count - 1));
+            GalleryFeedback = "Cover updated";
+            _toasts.ShowRich("Cover updated", title: Title, cover: Cover, kind: ToastKind.Success);
         }
         catch (Exception ex)
         {
             Error = ex.Message;
+            GalleryFeedback = null;
             _toasts.Error(ex.Message);
         }
         finally { Busy = false; }
@@ -1757,13 +1823,17 @@ public partial class GameDetailViewModel : ViewModelBase
     private async Task ResetCoverAsync()
     {
         if (Busy) return;
-        Busy = true; Error = null;
+        Busy = true; Error = null; GalleryFeedback = null;
         try
         {
             var detail = await _app.Hub.ResetCoverAsync(GameId);
-            await ApplyDetailAsync(detail);
+            IsCustomCover = detail.IsCustomCover;
+            var coverCandidates = new List<string>();
+            if (!string.IsNullOrWhiteSpace(detail.CoverUrl)) coverCandidates.Add(detail.CoverUrl!);
+            if (!string.IsNullOrWhiteSpace(detail.CoverFullUrl)) coverCandidates.Add(detail.CoverFullUrl!);
+            await LoadCoverAsync(coverCandidates);
             Status = "Cover reset";
-            _toasts.Success("Cover reset");
+            _toasts.ShowRich("Cover reset", title: Title, cover: Cover, kind: ToastKind.Success);
         }
         catch (Exception ex)
         {

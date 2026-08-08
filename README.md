@@ -2,14 +2,14 @@
 
 Desktop client for [AVN Hub](https://github.com/goonedoutgames/avn-hub) — browse F95Zone, manage your library, download games, track playtime, and sync Ren'Py saves.
 
-Built with **.NET 8 + Avalonia (Skia)**. Interactive hoster downloads open **Afterglow Browser** (WebView2) so captchas/timers can be completed and files are intercepted in-app.
+Built with **.NET 8 + Avalonia (Skia)** for **Windows**. Interactive hoster downloads open **Afterglow Browser** (WebView2) so captchas/timers can be completed and files are intercepted in-app.
 
 ## Dual hub mode (exclusive)
 
 | Mode | What happens |
 |------|----------------|
 | **Remote** | Talks only to your hosted AVN Hub API. **Never** starts the embedded hub. |
-| **Local** | Spawns bundled `avn-hub` on `127.0.0.1:18080`. Data lives under `%AppData%/Afterglow/hub-data`. |
+| **Local** | Spawns bundled `avn-hub.exe` on `127.0.0.1:18080`. Data lives under `%AppData%/Afterglow/hub-data`. |
 
 Local mode is **not a backup**. If you care about saves/playtime across machines, use Remote.
 
@@ -17,10 +17,9 @@ Install paths, library folders, and UI prefs stay on this PC (Steam-like). Playt
 
 ## Requirements
 
-- .NET 8 SDK
-- **Windows** (primary): Microsoft Edge **WebView2 Runtime** for Afterglow Browser download capture
-- **Linux** (secondary package): same solution builds with `net8.0`; interactive hoster browser is unavailable (opens/queues direct links only)
-- For **Local** mode: matching `avn-hub` binary in `sidecar/` (`avn-hub.exe` on Windows, `avn-hub` on Linux), on `PATH`, `AFTERGLOW_AVN_HUB_PATH`, or a sibling `avn-hub` repo (auto cargo build)
+- .NET 8 SDK (**Windows** — target `net8.0-windows`)
+- Microsoft Edge **WebView2 Runtime** for Afterglow Browser download capture
+- For **Local** mode: `avn-hub.exe` in `sidecar/`, on `PATH`, `AFTERGLOW_AVN_HUB_PATH`, or a sibling `avn-hub` repo (auto cargo build)
 - For **Remote** mode: a reachable AVN Hub API
 - Optional: Rust/`cargo` next to this repo for Local sidecar builds
 
@@ -30,6 +29,8 @@ Install paths, library folders, and UI prefs stay on this PC (Steam-like). Playt
 cd avn-hub-desktop
 dotnet run --project src/Afterglow
 ```
+
+Use `net8.0-windows` (the project default). Do not retarget to plain `net8.0` — that drops WebView2 / Afterglow Browser.
 
 ### Local mode (dev): build hub + attach sidecar + launch
 
@@ -63,6 +64,7 @@ src/Afterglow.LocalStore # Machine-local SQLite
 src/Afterglow.Downloads  # GoFile / Mega / Pixeldrain / HTTP + extract
 src/Afterglow.Launcher   # Launch, playtime queue, Ren'Py save upload
 src/Afterglow.HubSidecar # Embedded avn-hub process (Local only)
+src/Afterglow.BrowserHost # WebView2 Afterglow Browser
 ```
 
 ## Packaging
@@ -70,17 +72,10 @@ src/Afterglow.HubSidecar # Embedded avn-hub process (Local only)
 See [packaging/README.md](packaging/README.md).
 
 ```powershell
-# Windows
 ./packaging/publish-windows.ps1
 ```
 
-```bash
-# Linux
-./packaging/publish-linux.sh
-```
-
-CI (`.github/workflows/package.yml`) always publishes a Windows artifact. Linux is best-effort and
-is attached to tag releases only when that job succeeds.
+CI (`.github/workflows/package.yml`) publishes a Windows zip; tag `v*` creates a GitHub Release.
 
 ## MVP download hosts
 
