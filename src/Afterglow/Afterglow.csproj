@@ -1,0 +1,59 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net8.0;net8.0-windows</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>Assets\avalonia-logo.ico</ApplicationIcon>
+    <!-- Magick.NET advisory noise; used only to decode hub/F95 cover bytes we already store. -->
+    <NoWarn>$(NoWarn);NU1901;NU1902;NU1903</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(TargetFramework.Contains('-windows'))">
+    <OutputType>WinExe</OutputType>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <DefineConstants>$(DefineConstants);AFTERGLOW_WINDOWS</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+    <AvaloniaResource Include="Themes\**" />
+    <Content Include="Assets\avalonia-logo.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>Assets\avalonia-logo.ico</TargetPath>
+    </Content>
+    <Content Include="sidecar\**" Condition="Exists('sidecar')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>sidecar\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Controls.ColorPicker" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.1" />
+    <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="14.10.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Afterglow.Core\Afterglow.Core.csproj" />
+    <ProjectReference Include="..\Afterglow.HubClient\Afterglow.HubClient.csproj" />
+    <ProjectReference Include="..\Afterglow.LocalStore\Afterglow.LocalStore.csproj" />
+    <ProjectReference Include="..\Afterglow.Downloads\Afterglow.Downloads.csproj" />
+    <ProjectReference Include="..\Afterglow.Launcher\Afterglow.Launcher.csproj" />
+    <ProjectReference Include="..\Afterglow.HubSidecar\Afterglow.HubSidecar.csproj" />
+  </ItemGroup>
+
+  <!-- WebView2 Afterglow Browser is Windows-only -->
+  <ItemGroup Condition="$(TargetFramework.Contains('-windows'))">
+    <ProjectReference Include="..\Afterglow.BrowserHost\Afterglow.BrowserHost.csproj" />
+  </ItemGroup>
+</Project>

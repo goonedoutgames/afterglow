@@ -1,0 +1,41 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Afterglow.App"
+             xmlns:local="using:Afterglow"
+             RequestedThemeVariant="Dark">
+  <Application.DataTemplates>
+    <local:ViewLocator />
+  </Application.DataTemplates>
+  <Application.Styles>
+    <FluentTheme />
+    <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
+    <StyleInclude Source="avares://Afterglow/Themes/AfterglowTheme.axaml" />
+  </Application.Styles>
+  <Application.Resources>
+    <Color x:Key="BgColor">#0C0F14</Color>
+    <Color x:Key="ElevatedColor">#141A22</Color>
+    <Color x:Key="SoftColor">#1A222D</Color>
+    <Color x:Key="BorderColor">#3A4A5C</Color>
+    <Color x:Key="TextColor">#E8EEF6</Color>
+    <Color x:Key="MutedColor">#8B9BB0</Color>
+    <Color x:Key="AccentColor">#3D9CF0</Color>
+    <SolidColorBrush x:Key="BgBrush" Color="{StaticResource BgColor}" />
+    <SolidColorBrush x:Key="ElevatedBrush" Color="{StaticResource ElevatedColor}" />
+    <SolidColorBrush x:Key="SoftBrush" Color="{StaticResource SoftColor}" />
+    <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource BorderColor}" Opacity="0.55" />
+    <SolidColorBrush x:Key="TextBrush" Color="{StaticResource TextColor}" />
+    <SolidColorBrush x:Key="MutedBrush" Color="{StaticResource MutedColor}" />
+    <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}" />
+    <!-- Frosted glass: lighter fills so acrylic shows through; still opaque enough to read -->
+    <SolidColorBrush x:Key="GlassFillBrush" Color="#6E161C28" />
+    <SolidColorBrush x:Key="GlassFillStrongBrush" Color="#8A141A24" />
+    <SolidColorBrush x:Key="GlassCardBrush" Color="#55141A22" />
+    <SolidColorBrush x:Key="GlassCardHoverBrush" Color="#6618202C" />
+    <SolidColorBrush x:Key="GlassMetaBrush" Color="#A00C1018" />
+    <SolidColorBrush x:Key="GlassHighlightBrush" Color="#48FFFFFF" />
+    <SolidColorBrush x:Key="AccentGlowBrush" Color="#CC3D9CF0" />
+    <SolidColorBrush x:Key="AccentBloomBrush" Color="#663D9CF0" />
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="#383D9CF0" />
+    <BoxShadows x:Key="CardHoverGlow">0 0 0 1.5 #D03D9CF0, 0 0 28 4 #703D9CF0, 0 14 36 0 #66000000</BoxShadows>
+  </Application.Resources>
+</Application>

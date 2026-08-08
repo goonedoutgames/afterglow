@@ -1,0 +1,53 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Afterglow.ViewModels"
+             x:Class="Afterglow.Views.FirstRunView"
+             x:DataType="vm:FirstRunViewModel">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <DockPanel Margin="28" LastChildFill="True">
+      <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,8,0,28" HorizontalAlignment="Center">
+        <Image Source="avares://Afterglow/Assets/avn-hub-logo.webp" Height="84" HorizontalAlignment="Center" />
+        <TextBlock Text="Welcome to Afterglow" Classes="title" FontSize="34" HorizontalAlignment="Center" />
+        <TextBlock Text="Connect to your hosted AVN Hub, or run a local hub on this machine."
+                   Classes="muted" TextWrapping="Wrap" MaxWidth="560"
+                   HorizontalAlignment="Center" TextAlignment="Center" />
+      </StackPanel>
+
+      <TextBlock DockPanel.Dock="Bottom" Text="{Binding Status}" Classes="muted"
+                 TextWrapping="Wrap" Margin="0,8,0,0" HorizontalAlignment="Center" MaxWidth="640"
+                 IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      <TextBlock DockPanel.Dock="Bottom" Text="{Binding Error}" Foreground="#E35D6A"
+                 TextWrapping="Wrap" Margin="0,8,0,0" HorizontalAlignment="Center" MaxWidth="640"
+                 IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+      <UniformGrid Columns="2" Rows="1">
+        <Border Classes="glass" Margin="0,0,10,0" MinHeight="280">
+          <StackPanel Spacing="12">
+            <TextBlock Text="Remote hub" FontSize="18" FontWeight="SemiBold" />
+            <TextBlock Classes="muted" TextWrapping="Wrap"
+                       Text="Best if you already host AVN Hub — library, saves, and playtime sync across devices. No embedded hub process." />
+            <TextBox PlaceholderText="https://avns-api.example.com" Text="{Binding RemoteUrl}" IsEnabled="{Binding !Busy}" />
+            <TextBox PlaceholderText="App password (if set)" Text="{Binding Password}" PasswordChar="•" IsEnabled="{Binding !Busy}" />
+            <Button Classes="accent" Content="Connect remote" HorizontalAlignment="Stretch"
+                    Command="{Binding UseRemoteCommand}" IsEnabled="{Binding !Busy}" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="glass" Margin="10,0,0,0" MinHeight="280">
+          <StackPanel Spacing="12">
+            <TextBlock Text="Local hub" FontSize="18" FontWeight="SemiBold" />
+            <TextBlock Classes="muted" TextWrapping="Wrap"
+                       Text="Runs embedded avn-hub on this PC only. Afterglow will use sidecar/avn-hub.exe, PATH, or auto-build from a sibling avn-hub repo." />
+            <Border Background="#18000000" CornerRadius="10" Padding="12" Margin="0,8,0,0">
+              <TextBlock Classes="caption" TextWrapping="Wrap"
+                         Text="First local start may take a few minutes if cargo needs to compile the hub." />
+            </Border>
+            <Button Classes="accent" Content="Start local hub" HorizontalAlignment="Stretch"
+                    VerticalAlignment="Bottom" Margin="0,12,0,0"
+                    Command="{Binding UseLocalCommand}" IsEnabled="{Binding !Busy}" />
+          </StackPanel>
+        </Border>
+      </UniformGrid>
+    </DockPanel>
+  </ScrollViewer>
+</UserControl>

@@ -1,0 +1,71 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Afterglow.ViewModels"
+             x:Class="Afterglow.Views.BrowseView"
+             x:DataType="vm:BrowseViewModel">
+  <DockPanel Margin="4">
+    <Border DockPanel.Dock="Top" Classes="glass" Padding="14,12" Margin="4,4,4,8" CornerRadius="16">
+      <StackPanel Spacing="10">
+        <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+          <TextBox PlaceholderText="Search title…" Text="{Binding Query}" MinWidth="160" />
+          <ComboBox Grid.Column="1" Width="120" ItemsSource="{Binding SortOptions}" SelectedItem="{Binding Sort}" />
+          <ComboBox Grid.Column="2" Width="120" ItemsSource="{Binding DateOptions}" SelectedItem="{Binding DatePreset}" />
+          <ComboBox Grid.Column="3" Width="120" ItemsSource="{Binding Engines}" SelectedItem="{Binding Engine}" />
+          <Button Grid.Column="4" Classes="accent" Content="Search" Command="{Binding SearchCommand}" IsEnabled="{Binding !Busy}" />
+        </Grid>
+        <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+          <TextBox PlaceholderText="Add by F95 URL or thread id…" Text="{Binding AddByUrl}" MinWidth="160" />
+          <Button Grid.Column="1" Classes="ghost" Content="Add URL" Command="{Binding AddByUrlCommand}" IsEnabled="{Binding !Busy}" />
+          <Button Grid.Column="2" Classes="ghost" Content="Prev" Command="{Binding PrevPageCommand}" />
+          <TextBlock Grid.Column="3" Text="{Binding Page, StringFormat=Page {0}}" VerticalAlignment="Center" Classes="muted" />
+          <Button Grid.Column="4" Classes="ghost" Content="Next" Command="{Binding NextPageCommand}" />
+        </Grid>
+        <TextBlock Text="{Binding Status}" Classes="muted" />
+        <TextBlock Text="{Binding Error}" Foreground="#E35D6A" TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="6,10,6,18">
+      <ItemsControl ItemsSource="{Binding Results}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:CatalogItemViewModel">
+            <Border Classes="game-card-host" Width="220" Height="368">
+              <Border Classes="game-card">
+                <Border Classes="game-card-face">
+                  <DockPanel>
+                    <Border DockPanel.Dock="Bottom" Classes="game-card-meta" Padding="10,8">
+                      <StackPanel Spacing="6">
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="2" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding Subtitle}" Classes="caption" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Meta}" Classes="caption" />
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                          <Button Classes="accent" Content="{Binding AddButtonLabel}"
+                                  Command="{Binding $parent[UserControl].((vm:BrowseViewModel)DataContext).AddCommand}"
+                                  CommandParameter="{Binding}"
+                                  IsEnabled="{Binding !IsInLibrary}" />
+                          <Button Grid.Column="1" Classes="ghost" Content="F95"
+                                  Command="{Binding $parent[UserControl].((vm:BrowseViewModel)DataContext).OpenThreadCommand}"
+                                  CommandParameter="{Binding}" />
+                        </Grid>
+                      </StackPanel>
+                    </Border>
+                    <Panel>
+                      <Border Classes="cover-fallback" />
+                      <Image Source="{Binding Cover}" Stretch="UniformToFill"
+                             IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    </Panel>
+                  </DockPanel>
+                </Border>
+              </Border>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

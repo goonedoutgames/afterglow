@@ -1,0 +1,143 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Afterglow.ViewModels"
+             x:Class="Afterglow.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+  <ScrollViewer>
+    <StackPanel Spacing="16" MaxWidth="760" Margin="8">
+      <TextBlock Classes="muted" Text="{Binding ModeLabel, StringFormat=Current mode: {0}}" />
+
+      <Border Classes="glass">
+        <StackPanel Spacing="10">
+          <TextBlock Text="F95Zone" FontWeight="SemiBold" />
+          <TextBlock Classes="help"
+                     Text="Required for Browse, refresh, download links, and media on both Remote and Local hubs. Same as the web Settings page." />
+          <TextBlock Text="{Binding F95Status}" TextWrapping="Wrap" />
+          <TextBlock Classes="field-label" Text="Username or email" />
+          <TextBox Text="{Binding F95Username}" IsEnabled="{Binding !Busy}" />
+          <TextBlock Classes="field-label" Text="Password" />
+          <TextBox Text="{Binding F95Password}" PasswordChar="•" IsEnabled="{Binding !Busy}" />
+          <Button Classes="accent" Content="Login to F95Zone" Command="{Binding F95LoginCommand}" HorizontalAlignment="Left" IsEnabled="{Binding !Busy}" />
+          <TextBlock Classes="field-label" Text="Or paste cookies" Margin="0,8,0,0" />
+          <TextBox Text="{Binding F95Cookies}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72" IsEnabled="{Binding !Busy}"
+                   PlaceholderText="xf_user / xf_session…" />
+          <Button Classes="ghost" Content="Save cookies" Command="{Binding F95CookiesCommand}" HorizontalAlignment="Left" IsEnabled="{Binding !Busy}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="glass">
+        <StackPanel Spacing="10">
+          <TextBlock Text="Hub app password" FontWeight="SemiBold" />
+          <TextBlock Classes="help" Text="{Binding AppPasswordStatus}" TextWrapping="Wrap" />
+          <TextBox PlaceholderText="New hub app password" Text="{Binding HubAppPassword}" PasswordChar="•" IsEnabled="{Binding !Busy}" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Classes="accent" Content="Set password" Command="{Binding SetAppPasswordCommand}" IsEnabled="{Binding !Busy}" />
+            <Button Classes="ghost" Content="Remove password" Command="{Binding RemoveAppPasswordCommand}" IsEnabled="{Binding !Busy}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="glass">
+        <StackPanel Spacing="10">
+          <TextBlock Text="Tag clicks" FontWeight="SemiBold" />
+          <TextBlock Classes="help"
+                     Text="When you tap a tag on a game detail page, choose Library filter or Browse search." />
+          <ComboBox Width="220" ItemsSource="{Binding TagClickOptions}" SelectedItem="{Binding TagClickAction}" IsEnabled="{Binding !Busy}" />
+          <Button Classes="ghost" Content="Save tag click action" Command="{Binding SaveTagClickCommand}" HorizontalAlignment="Left" IsEnabled="{Binding !Busy}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="glass">
+        <StackPanel Spacing="10">
+          <TextBlock Text="Hub storage" FontWeight="SemiBold" />
+          <TextBlock Classes="help" Text="Usage under the hub data directory (Local: AppData hub-data; Remote: server volume)." />
+          <TextBlock Text="{Binding StorageSummary}" Classes="caption" TextWrapping="Wrap" />
+          <Button Classes="ghost" Content="Purge hub media cache" Command="{Binding PurgeHubMediaCommand}" HorizontalAlignment="Left" IsEnabled="{Binding !Busy}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="glass">
+        <StackPanel Spacing="10">
+          <TextBlock Text="Library folder" FontWeight="SemiBold" />
+          <TextBlock Classes="help"
+                     Text="Where Afterglow installs and extracts games on this PC (like a Steam library folder). This path is local-only and is not synced to the hub." />
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox Text="{Binding LibraryRoot}" IsEnabled="{Binding !Busy}" />
+            <Button Grid.Column="1" Classes="ghost" Content="Browse…" Click="BrowseLibrary_Click" IsEnabled="{Binding !Busy}" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="glass">
+        <StackPanel Spacing="10">
+          <TextBlock Text="Accent color" FontWeight="SemiBold" />
+          <TextBlock Classes="help"
+                     Text="UI highlight color for buttons, badges, and selection. Pick a color or enter a hex value (#RRGGBB)." />
+          <StackPanel Orientation="Horizontal" Spacing="16">
+            <ColorPicker Color="{Binding AccentColor}" IsAlphaEnabled="False" Width="280" IsEnabled="{Binding !Busy}" />
+            <StackPanel Spacing="8" VerticalAlignment="Top">
+              <TextBlock Classes="field-label" Text="Hex" />
+              <TextBox Width="140" Text="{Binding AccentHex}" IsEnabled="{Binding !Busy}" />
+              <Button Classes="ghost" Content="Reset to default" Command="{Binding ResetAccentCommand}" HorizontalAlignment="Left" IsEnabled="{Binding !Busy}" />
+            </StackPanel>
+          </StackPanel>
+          <Button Classes="accent" Content="Save local preferences" Command="{Binding SaveLocalPrefsCommand}" HorizontalAlignment="Left" IsEnabled="{Binding !Busy}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="glass">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Save sync (hub)" FontWeight="SemiBold" />
+          <TextBlock Classes="help"
+                     Text="When enabled, Afterglow can upload Ren'Py saves to your hub after play so they follow you across devices. Rolling retention deletes older autosaves past the max count." />
+          <CheckBox Content="Auto save sync enabled" IsChecked="{Binding SaveSyncEnabled}" IsEnabled="{Binding !Busy}" />
+          <CheckBox Content="Rolling retention (keep newest only)" IsChecked="{Binding SaveSyncRolling}" IsEnabled="{Binding !Busy}" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="Max saves per game" VerticalAlignment="Center" />
+            <TextBox Text="{Binding SaveSyncMax}" Width="80" IsEnabled="{Binding !Busy}" />
+          </StackPanel>
+          <Button Classes="accent" Content="Save hub sync settings" Command="{Binding SaveHubSyncCommand}" HorizontalAlignment="Left" IsEnabled="{Binding !Busy}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="glass">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Switch hub mode" FontWeight="SemiBold" />
+          <TextBlock Classes="help"
+                     Text="Remote talks to a hosted AVN Hub over HTTPS and never starts the embedded hub. Local runs avn-hub on this PC only. Remote and Local libraries are separate." />
+          <TextBlock Classes="field-label" Text="Remote API URL" />
+          <TextBox PlaceholderText="https://avns-api.example.com" Text="{Binding RemoteUrl}" IsEnabled="{Binding !Busy}" />
+          <TextBlock Classes="field-label" Text="Login password (reconnect)" />
+          <TextBlock Classes="help" Text="Bearer login when switching to a password-protected hub. Cleared after a successful switch." />
+          <TextBox PlaceholderText="App password" Text="{Binding Password}" PasswordChar="•" IsEnabled="{Binding !Busy}" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Classes="accent" Content="Use Remote" Command="{Binding SwitchRemoteCommand}" IsEnabled="{Binding !Busy}" />
+            <Button Classes="ghost" Content="Use Local" Command="{Binding SwitchLocalCommand}" IsEnabled="{Binding !Busy}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="glass">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Local sidecar (dev)" FontWeight="SemiBold" />
+          <TextBlock Classes="help"
+                     Text="Afterglow looks for avn-hub.exe in the sidecar folder, AFTERGLOW_AVN_HUB_PATH, PATH, or a sibling avn-hub repo (and can cargo build --release if needed)." />
+          <TextBlock Text="{Binding SidecarInfo}" Classes="caption" TextWrapping="Wrap" />
+          <Button Classes="ghost" Content="Prepare / rebuild sidecar" Command="{Binding PrepareSidecarCommand}" HorizontalAlignment="Left" IsEnabled="{Binding !Busy}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="glass">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Factory reset" FontWeight="SemiBold" />
+          <TextBlock Classes="help"
+                     Text="Clears hub connection, UI prefs, download queue, and media cache, then returns to the welcome screen. Local install folder links on this PC are kept." />
+          <Button Classes="ghost" Content="Reset Afterglow to factory settings" Command="{Binding ResetFactoryCommand}" HorizontalAlignment="Left" IsEnabled="{Binding !Busy}" />
+        </StackPanel>
+      </Border>
+
+      <TextBlock Text="{Binding Status}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      <TextBlock Text="{Binding Error}" Foreground="#E35D6A" TextWrapping="Wrap" IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

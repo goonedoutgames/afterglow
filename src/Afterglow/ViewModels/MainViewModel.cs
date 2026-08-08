@@ -1,0 +1,2115 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform.Storage;
+using System.Collections.ObjectModel;
+using Afterglow.Core;
+using Afterglow.Core.Models;
+using Afterglow.Downloads;
+using Afterglow.HubSidecar;
+using Afterglow.Services;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+
+namespace Afterglow.ViewModels;
+
+public partial class MainViewModel : ViewModelBase
+{
+    private readonly AfterglowAppService _app;
+    private readonly MediaCacheService _media;
+
+    public MainViewModel(AfterglowAppService app, MediaCacheService media, ToastService toasts)
+    {
+        _app = app;
+        _media = media;
+        Toasts = toasts;
+        FirstRun = new FirstRunViewModel(app, OnConfigured);
+        LibrarySetup = new LibrarySetupViewModel(app, OnLibrarySetupDone);
+        Library = new LibraryViewModel(app, media, OpenGameAsync);
+        Browse = new BrowseViewModel(app, media, toasts);
+        Downloads = new DownloadsViewModel(app, media);
+        Settings = new SettingsViewModel(app, OnConfigured, OnFactoryReset);
+        Detail = new GameDetailViewModel(app, media, () => _ = NavigateAsync("library"), () => _ = NavigateAsync("downloads"), toasts);
+        CurrentPage = FirstRun;
+        _app.Downloads.JobChanged += OnDownloadJobChanged;
+        _app.Downloads.JobRemoved += (_, id) => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            _downloadJobs.Remove(id);
+            _terminalToastShown.Remove(id);
+            RefreshDownloadsNav();
+        });
+        _app.Downloads.FinishedJobsCleared += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            foreach (var id in _downloadJobs.Where(kv =>
+                         kv.Value.Status is DownloadJobStatus.Completed or DownloadJobStatus.Failed or DownloadJobStatus.Cancelled)
+                     .Select(kv => kv.Key).ToList())
+            {
+                _downloadJobs.Remove(id);
+                _terminalToastShown.Remove(id);
+            }
+            RefreshDownloadsNav();
+        });
+    }
+
+    public ToastService Toasts { get; }
+
+    public FirstRunViewModel FirstRun { get; }
+    public LibrarySetupViewModel LibrarySetup { get; }
+    public LibraryViewModel Library { get; }
+    public BrowseViewModel Browse { get; }
+    public DownloadsViewModel Downloads { get; }
+    public SettingsViewModel Settings { get; }
+    public GameDetailViewModel Detail { get; }
+
+    [ObservableProperty] private ViewModelBase? _currentPage;
+    [ObservableProperty] private string _statusMessage = "Starting…";
+    [ObservableProperty] private string? _errorMessage;
+    [ObservableProperty] private bool _showShell;
+    [ObservableProperty] private bool _showLocalBanner;
+    [ObservableProperty] private string _navTitle = "Afterglow";
+    [ObservableProperty] private bool _downloadsActive;
+    [ObservableProperty] private string _downloadsNavDetail = "";
+    [ObservableProperty] private double _downloadsNavProgress;
+    [ObservableProperty] private bool _downloadsNavShowBar;
+
+    private readonly Dictionary<Guid, DownloadJob> _downloadJobs = new();
+    private readonly HashSet<Guid> _terminalToastShown = new();
+
+    private void OnDownloadJobChanged(object? sender, DownloadJob job)
+    {
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            _downloadJobs[job.Id] = CloneJob(job);
+            RefreshDownloadsNav();
+
+            // Toasts only for significant outcomes — progress lives under the Downloads nav.
+            if (!_terminalToastShown.Add(job.Id)) return;
+            var host = string.IsNullOrWhiteSpace(job.Host) ? "download" : job.Host;
+            var title = string.IsNullOrWhiteSpace(job.GameTitle) ? $"Game #{job.GameId}" : job.GameTitle!;
+            switch (job.Status)
+            {
+                case DownloadJobStatus.Completed:
+                    _ = ShowDownloadCompleteToastAsync(job.GameId, title, host);
+                    break;
+                case DownloadJobStatus.Failed:
+                    Toasts.Error(job.Error ?? $"Download failed · {host}");
+                    break;
+                default:
+                    _terminalToastShown.Remove(job.Id);
+                    break;
+            }
+        });
+    }
+
+    private async Task ShowDownloadCompleteToastAsync(long gameId, string title, string host)
+    {
+        Bitmap? cover = null;
+        try
+        {
+            var detail = await _app.Hub.GetGameAsync(gameId);
+            var url = detail.CoverUrl ?? detail.CoverFullUrl;
+            if (!string.IsNullOrWhiteSpace(url))
+                cover = await _media.GetAsync(url);
+        }
+        catch { /* cover optional */ }
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            Toasts.DownloadComplete(title, $"Download complete · {host}", cover));
+    }
+
+    private void RefreshDownloadsNav()
+    {
+        static bool IsActive(DownloadJobStatus s) => s is
+            DownloadJobStatus.Queued or DownloadJobStatus.Resolving or DownloadJobStatus.Downloading
+            or DownloadJobStatus.Extracting or DownloadJobStatus.OpenedInBrowser;
+
+        var active = _downloadJobs.Values.Where(j => IsActive(j.Status)).ToList();
+        DownloadsActive = active.Count > 0;
+        if (!DownloadsActive)
+        {
+            DownloadsNavDetail = "";
+            DownloadsNavProgress = 0;
+            DownloadsNavShowBar = false;
+            return;
+        }
+
+        var inBrowser = active.Count(j => j.Status == DownloadJobStatus.OpenedInBrowser);
+        var transferring = active.Where(j => j.Status is DownloadJobStatus.Downloading or DownloadJobStatus.Extracting or DownloadJobStatus.Resolving).ToList();
+        if (transferring.Count > 0)
+        {
+            var avg = transferring.Average(j => j.Progress);
+            DownloadsNavProgress = Math.Clamp(avg, 0, 1);
+            DownloadsNavShowBar = true;
+            DownloadsNavDetail = transferring.Count == 1
+                ? $"{StatusLabel(transferring[0].Status)} · {avg:P0}"
+                : $"{transferring.Count} active · {avg:P0}";
+        }
+        else if (inBrowser > 0)
+        {
+            DownloadsNavProgress = 0;
+            DownloadsNavShowBar = false;
+            DownloadsNavDetail = inBrowser == 1 ? "Waiting in browser" : $"{inBrowser} in browser";
+        }
+        else
+        {
+            DownloadsNavProgress = 0;
+            DownloadsNavShowBar = false;
+            DownloadsNavDetail = active.Count == 1 ? "Queued" : $"{active.Count} queued";
+        }
+    }
+
+    private static string StatusLabel(DownloadJobStatus status) => status switch
+    {
+        DownloadJobStatus.Resolving => "Resolving",
+        DownloadJobStatus.Downloading => "Downloading",
+        DownloadJobStatus.Extracting => "Extracting",
+        _ => status.ToString()
+    };
+
+    private static DownloadJob CloneJob(DownloadJob job) => new()
+    {
+        Id = job.Id,
+        GameId = job.GameId,
+        GameTitle = job.GameTitle,
+        SourceUrl = job.SourceUrl,
+        Host = job.Host,
+        Status = job.Status,
+        Progress = job.Progress,
+        Error = job.Error,
+        OutputPath = job.OutputPath,
+        CreatedAt = job.CreatedAt,
+        BytesReceived = job.BytesReceived,
+        TotalBytes = job.TotalBytes,
+        BytesPerSecond = job.BytesPerSecond
+    };
+
+    public async Task BootstrapAsync()
+    {
+        try
+        {
+            await _app.InitializeAsync();
+            ThemeAccent.Apply(_app.Preferences.AccentHex);
+            ShowLocalBanner = _app.IsLocalMode;
+            if (_app.IsConfigured)
+            {
+                ShowShell = true;
+                StatusMessage = _app.IsLocalMode ? "Local hub ready" : "Remote hub connected";
+                await EnterConfiguredShellAsync();
+            }
+            else
+            {
+                ShowShell = false;
+                CurrentPage = FirstRun;
+                StatusMessage = "Choose Remote or Local hub";
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            StatusMessage = "Startup failed";
+            ShowShell = false;
+            CurrentPage = FirstRun;
+        }
+    }
+
+    private async void OnConfigured()
+    {
+        ShowShell = true;
+        ShowLocalBanner = _app.IsLocalMode;
+        ErrorMessage = null;
+        StatusMessage = _app.IsLocalMode
+            ? "Local hub — data stays on this PC"
+            : "Remote hub connected";
+        ThemeAccent.Apply(_app.Preferences.AccentHex);
+        await EnterConfiguredShellAsync();
+    }
+
+    private async void OnLibrarySetupDone()
+    {
+        StatusMessage = "Library folder ready";
+        await NavigateAsync("library");
+    }
+
+    private async void OnFactoryReset()
+    {
+        ShowShell = false;
+        ShowLocalBanner = false;
+        ErrorMessage = null;
+        StatusMessage = "Factory reset — choose Remote or Local hub";
+        CurrentPage = FirstRun;
+        NavTitle = "Afterglow";
+        await Task.CompletedTask;
+    }
+
+    private async Task EnterConfiguredShellAsync()
+    {
+        if (!_app.Preferences.LibrarySetupComplete)
+        {
+            CurrentPage = LibrarySetup;
+            NavTitle = "Library folder";
+            LibrarySetup.ResetFromPrefs();
+            return;
+        }
+
+        await SyncDownloadNavFromDbAsync();
+        await NavigateAsync("library");
+        _ = SafeFlushPlaytimeAsync();
+    }
+
+    private async Task SyncDownloadNavFromDbAsync()
+    {
+        try
+        {
+            foreach (var job in await _app.Database.GetDownloadJobsAsync())
+            {
+                _downloadJobs[job.Id] = CloneJob(job);
+                if (job.Status is DownloadJobStatus.Completed or DownloadJobStatus.Failed or DownloadJobStatus.Cancelled)
+                    _terminalToastShown.Add(job.Id);
+            }
+            RefreshDownloadsNav();
+        }
+        catch
+        {
+            // Nav badge is best-effort.
+        }
+    }
+
+    [RelayCommand]
+    private async Task Navigate(string page) => await NavigateAsync(page);
+
+    public async Task NavigateAsync(string page)
+    {
+        ErrorMessage = null;
+        switch (page.ToLowerInvariant())
+        {
+            case "library":
+                if (!_app.Preferences.LibrarySetupComplete)
+                {
+                    CurrentPage = LibrarySetup;
+                    NavTitle = "Library folder";
+                    LibrarySetup.ResetFromPrefs();
+                    break;
+                }
+                CurrentPage = Library;
+                NavTitle = "Library";
+                await Library.RefreshAsync();
+                break;
+            case "browse":
+                CurrentPage = Browse;
+                NavTitle = "Browse";
+                await Browse.EnsureLoadedAsync();
+                break;
+            case "downloads":
+                CurrentPage = Downloads;
+                NavTitle = "Downloads";
+                await Downloads.RefreshAsync();
+                break;
+            case "settings":
+                CurrentPage = Settings;
+                NavTitle = "Settings";
+                await Settings.LoadAsync();
+                break;
+        }
+    }
+
+    public async Task OpenGameAsync(long gameId)
+    {
+        CurrentPage = Detail;
+        NavTitle = "Game";
+        await Detail.LoadAsync(gameId);
+    }
+
+    private async Task SafeFlushPlaytimeAsync()
+    {
+        try { await _app.PlaytimeSync.FlushAsync(); }
+        catch { /* offline / missing endpoint */ }
+    }
+}
+
+public partial class FirstRunViewModel : ViewModelBase
+{
+    private readonly AfterglowAppService _app;
+    private readonly Action _onConfigured;
+
+    public FirstRunViewModel(AfterglowAppService app, Action onConfigured)
+    {
+        _app = app;
+        _onConfigured = onConfigured;
+    }
+
+    [ObservableProperty] private string _remoteUrl = "https://";
+    [ObservableProperty] private string _password = "";
+    [ObservableProperty] private string? _error;
+    [ObservableProperty] private string? _status;
+    [ObservableProperty] private bool _busy;
+
+    [RelayCommand]
+    private async Task UseRemoteAsync()
+    {
+        Busy = true; Error = null; Status = "Connecting…";
+        try
+        {
+            await _app.ConfigureRemoteAsync(RemoteUrl.Trim(), string.IsNullOrWhiteSpace(Password) ? null : Password);
+            Status = "Connected.";
+            _onConfigured();
+        }
+        catch (Exception ex) { Error = ex.Message; Status = null; }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task UseLocalAsync()
+    {
+        Busy = true; Error = null; Status = "Preparing local hub…";
+        try
+        {
+            await _app.ConfigureLocalAsync(new Progress<string>(m => Status = m));
+            Status = "Local hub ready.";
+            _onConfigured();
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message + "\n\nAfterglow can auto-build from a sibling avn-hub repo (cargo), or place avn-hub.exe in the sidecar folder / set AFTERGLOW_AVN_HUB_PATH.";
+            Status = null;
+        }
+        finally { Busy = false; }
+    }
+}
+
+public partial class LibrarySetupViewModel : ViewModelBase
+{
+    private readonly AfterglowAppService _app;
+    private readonly Action _onDone;
+
+    public LibrarySetupViewModel(AfterglowAppService app, Action onDone)
+    {
+        _app = app;
+        _onDone = onDone;
+    }
+
+    [ObservableProperty] private string _libraryRoot = AppPaths.DefaultLibraryRoot;
+    [ObservableProperty] private string? _error;
+    [ObservableProperty] private bool _busy;
+
+    public void ResetFromPrefs()
+    {
+        LibraryRoot = string.IsNullOrWhiteSpace(_app.Preferences.LibraryRoot)
+            ? AppPaths.DefaultLibraryRoot
+            : _app.Preferences.LibraryRoot;
+        Error = null;
+    }
+
+    [RelayCommand]
+    private void UseDefault() => LibraryRoot = AppPaths.DefaultLibraryRoot;
+
+    public async Task PickFolderAsync(TopLevel topLevel)
+    {
+        var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Choose Afterglow library folder",
+            AllowMultiple = false
+        });
+        if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } path)
+            LibraryRoot = path;
+    }
+
+    [RelayCommand]
+    private async Task ContinueAsync()
+    {
+        Busy = true; Error = null;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(LibraryRoot))
+                throw new InvalidOperationException("Choose a library folder.");
+            Directory.CreateDirectory(LibraryRoot);
+            var prefs = _app.Preferences;
+            prefs.LibraryRoot = LibraryRoot.Trim();
+            prefs.LibrarySetupComplete = true;
+            await _app.SavePreferencesAsync(prefs);
+            _onDone();
+        }
+        catch (Exception ex) { Error = ex.Message; }
+        finally { Busy = false; }
+    }
+}
+
+public partial class LibraryItemViewModel : ViewModelBase
+{
+    public long Id { get; init; }
+    public string Title { get; init; } = "";
+    public string Subtitle { get; init; } = "";
+    public bool IsInstalled { get; init; }
+    public string PlaytimeLabel { get; init; } = "";
+    public string? CoverUrl { get; init; }
+    public List<string> ImageCandidates { get; init; } = [];
+    [ObservableProperty] private Bitmap? _cover;
+}
+
+public partial class CatalogItemViewModel : ViewModelBase
+{
+    public F95SearchResult Result { get; init; } = new();
+    public string Title => Result.Title;
+    public string Subtitle => string.Join(" · ", new[] { Result.Creator, Result.Version }.Where(x => !string.IsNullOrWhiteSpace(x)));
+    public string Meta => Result.Rating > 0 ? $"★ {Result.Rating:0.0}" : "";
+    public string? ThreadUrl => string.IsNullOrWhiteSpace(Result.Url) ? null : Result.Url;
+    [ObservableProperty] private Bitmap? _cover;
+    [ObservableProperty] private bool _isInLibrary;
+    public string AddButtonLabel => IsInLibrary ? "Added" : "Add";
+
+    partial void OnIsInLibraryChanged(bool value) => OnPropertyChanged(nameof(AddButtonLabel));
+}
+
+public partial class DownloadLinkItemViewModel : ViewModelBase
+{
+    public string Url { get; init; } = "";
+    public string Host { get; init; } = "";
+    public string? Platform { get; init; }
+    public string DisplayName { get; init; } = "";
+    public bool IsMasked { get; init; }
+    public string HostLabel => Host;
+    public string HostInitial => string.IsNullOrWhiteSpace(Host) ? "?" : char.ToUpperInvariant(Host[0]).ToString();
+    public string PlatformLabel => BrandIcons.PlatformLabel(Platform);
+    public string ActionLabel => "Download";
+    public string PlatformPath => BrandIcons.PlatformPath(Platform);
+    public IBrush PlatformBrush => BrandIcons.PlatformBrush(Platform);
+    [ObservableProperty] private Bitmap? _hostIcon;
+}
+
+public partial class LibraryViewModel : ViewModelBase
+{
+    private readonly AfterglowAppService _app;
+    private readonly MediaCacheService _media;
+    private readonly Func<long, Task> _openGame;
+
+    public LibraryViewModel(AfterglowAppService app, MediaCacheService media, Func<long, Task> openGame)
+    {
+        _app = app;
+        _media = media;
+        _openGame = openGame;
+    }
+
+    public ObservableCollection<LibraryItemViewModel> Games { get; } = [];
+    public ObservableCollection<string> SortOptions { get; } = ["title", "updated", "rating", "playtime"];
+    public ObservableCollection<string> PlayStatusOptions { get; } = ["", "unplayed", "playing", "completed", "on_hold", "dropped"];
+
+    [ObservableProperty] private string _search = "";
+    [ObservableProperty] private string _sort = "title";
+    [ObservableProperty] private string _playStatus = "";
+    [ObservableProperty] private string? _error;
+    [ObservableProperty] private string? _mediaStatus;
+    [ObservableProperty] private bool _busy;
+    [ObservableProperty] private bool _gridView = true;
+    [ObservableProperty] private LibraryItemViewModel? _selectedGame;
+
+    public async Task RefreshAsync()
+    {
+        Busy = true; Error = null; MediaStatus = "Loading covers…";
+        _media.ResetStats();
+        try
+        {
+            var list = await _app.Hub.GetLibraryAsync(
+                string.IsNullOrWhiteSpace(Search) ? null : Search,
+                string.IsNullOrWhiteSpace(PlayStatus) ? null : PlayStatus,
+                string.IsNullOrWhiteSpace(Sort) ? null : Sort);
+            var installs = (await _app.Database.GetInstallsAsync()).ToDictionary(x => x.GameId);
+            Games.Clear();
+            foreach (var g in list)
+            {
+                installs.TryGetValue(g.Game.Id, out var install);
+                var hours = g.Game.PlaytimeSeconds / 3600.0;
+                var candidates = new List<string>();
+                if (!string.IsNullOrWhiteSpace(g.CoverUrl)) candidates.Add(g.CoverUrl);
+                candidates.AddRange(g.PreviewUrls.Where(x => !string.IsNullOrWhiteSpace(x)));
+                var item = new LibraryItemViewModel
+                {
+                    Id = g.Game.Id,
+                    Title = g.Game.Title,
+                    Subtitle = string.Join(" · ", new[] { g.Game.Developer, g.Game.Version }.Where(x => !string.IsNullOrWhiteSpace(x))),
+                    IsInstalled = install is not null,
+                    PlaytimeLabel = hours > 0 ? $"{hours:0.0}h" : "",
+                    CoverUrl = g.CoverUrl,
+                    ImageCandidates = candidates
+                };
+                Games.Add(item);
+            }
+
+            var missingUrls = Games.Count(g => g.ImageCandidates.Count == 0);
+            // Load covers concurrently (throttled by await-in-loop batches)
+            var tasks = Games.Select(LoadCoverAsync).ToArray();
+            await Task.WhenAll(tasks);
+
+            MediaStatus = missingUrls > 0
+                ? $"Covers {_media.SuccessCount}/{Games.Count} · {missingUrls} games have no cover_url from hub. {_media.LastError}"
+                : $"Covers {_media.SuccessCount}/{Games.Count} loaded." + (_media.LastError is null ? "" : $" Last issue: {_media.LastError}");
+        }
+        catch (Exception ex) { Error = ex.Message; MediaStatus = null; }
+        finally { Busy = false; }
+    }
+
+    private async Task LoadCoverAsync(LibraryItemViewModel item)
+    {
+        foreach (var url in item.ImageCandidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var bmp = await _media.GetAsync(url);
+            if (bmp is not null)
+            {
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => item.Cover = bmp);
+                return;
+            }
+        }
+    }
+
+    [RelayCommand]
+    private async Task SearchAsync() => await RefreshAsync();
+
+    [RelayCommand]
+    private async Task CheckUpdatesAsync()
+    {
+        Busy = true; Error = null; MediaStatus = "Checking library for updates…";
+        try
+        {
+            var results = await _app.Hub.CheckAllUpdatesAsync();
+            await RefreshAsync();
+            var updates = results.Count(r => r.UpdateAvailable);
+            MediaStatus = updates > 0
+                ? $"Update check finished — {updates} game{(updates == 1 ? "" : "s")} with a newer F95 version."
+                : "Update check finished — library is up to date.";
+        }
+        catch (Exception ex) { Error = ex.Message; MediaStatus = null; }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private void ToggleView() => GridView = !GridView;
+
+    [RelayCommand]
+    private async Task OpenSelectedAsync()
+    {
+        if (SelectedGame is null) return;
+        await _openGame(SelectedGame.Id);
+    }
+
+    [RelayCommand]
+    private async Task OpenGameAsync(LibraryItemViewModel? item)
+    {
+        if (item is null) return;
+        await _openGame(item.Id);
+    }
+}
+
+public partial class BrowseViewModel : ViewModelBase
+{
+    private readonly AfterglowAppService _app;
+    private readonly MediaCacheService _media;
+    private readonly ToastService _toasts;
+    private readonly HashSet<long> _libraryThreadIds = [];
+    private bool _loaded;
+
+    public BrowseViewModel(AfterglowAppService app, MediaCacheService media, ToastService toasts)
+    {
+        _app = app;
+        _media = media;
+        _toasts = toasts;
+    }
+
+    public ObservableCollection<CatalogItemViewModel> Results { get; } = [];
+    public ObservableCollection<string> SortOptions { get; } = ["date", "likes", "views", "name", "rating"];
+    public ObservableCollection<string> DateOptions { get; } = ["Any time", "7 days", "30 days", "90 days", "1 year"];
+
+    [ObservableProperty] private string _query = "";
+    [ObservableProperty] private string _sort = "date";
+    [ObservableProperty] private string _datePreset = "Any time";
+    [ObservableProperty] private string _engine = "";
+    [ObservableProperty] private string _addByUrl = "";
+    [ObservableProperty] private int _page = 1;
+    [ObservableProperty] private string? _error;
+    [ObservableProperty] private string? _status;
+    [ObservableProperty] private bool _busy;
+
+    public string[] Engines { get; } = ["", "Ren'Py", "Unity", "HTML", "RPGM", "VN", "Other"];
+
+    public async Task EnsureLoadedAsync()
+    {
+        if (_loaded && Results.Count > 0) return;
+        await SearchAsync();
+    }
+
+    [RelayCommand]
+    private async Task SearchAsync()
+    {
+        Busy = true; Error = null; Status = null;
+        try
+        {
+            var dateDays = DatePreset switch
+            {
+                "7 days" => 7,
+                "30 days" => 30,
+                "90 days" => 90,
+                "1 year" => 365,
+                _ => 0
+            };
+            var list = await _app.Hub.CatalogSearchAsync(
+                query: string.IsNullOrWhiteSpace(Query) ? null : Query.Trim(),
+                page: Page,
+                sort: Sort,
+                dateDays: dateDays > 0 ? dateDays : null,
+                prefixes: string.IsNullOrWhiteSpace(Engine) || Engine == "Other" ? null : Engine);
+            await RefreshLibraryThreadIdsAsync();
+            Results.Clear();
+            foreach (var r in list)
+            {
+                var item = new CatalogItemViewModel { Result = r, IsInLibrary = _libraryThreadIds.Contains(r.ThreadId) };
+                Results.Add(item);
+                _ = LoadCoverAsync(item);
+            }
+            _loaded = true;
+            Status = Results.Count == 0
+                ? "No catalog results. Check F95 login on the hub, or try another search."
+                : $"Page {Page} · {Results.Count} results";
+        }
+        catch (Exception ex) { Error = ex.Message; _toasts.Error(ex.Message); }
+        finally { Busy = false; }
+    }
+
+    private async Task RefreshLibraryThreadIdsAsync()
+    {
+        _libraryThreadIds.Clear();
+        try
+        {
+            foreach (var g in await _app.Hub.GetLibraryAsync())
+            {
+                if (g.Game.F95ThreadId is long tid)
+                    _libraryThreadIds.Add(tid);
+            }
+        }
+        catch { /* browse still works without library overlay */ }
+    }
+
+    private async Task LoadCoverAsync(CatalogItemViewModel item)
+    {
+        var candidates = new List<string>();
+        if (!string.IsNullOrWhiteSpace(item.Result.Cover)) candidates.Add(item.Result.Cover);
+        candidates.AddRange(item.Result.Screenshots.Where(x => !string.IsNullOrWhiteSpace(x)));
+        foreach (var url in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var bmp = await _media.GetAsync(url);
+            if (bmp is not null)
+            {
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => item.Cover = bmp);
+                return;
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void OpenThread(CatalogItemViewModel? item)
+    {
+        if (item?.ThreadUrl is null) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(item.ThreadUrl) { UseShellExecute = true });
+        }
+        catch (Exception ex) { Error = ex.Message; }
+    }
+
+    [RelayCommand]
+    private async Task NextPageAsync()
+    {
+        Page++;
+        await SearchAsync();
+    }
+
+    [RelayCommand]
+    private async Task PrevPageAsync()
+    {
+        if (Page <= 1) return;
+        Page--;
+        await SearchAsync();
+    }
+
+    [RelayCommand]
+    private async Task AddAsync(CatalogItemViewModel? item)
+    {
+        if (item is null || item.IsInLibrary) return;
+        Busy = true; Error = null;
+        try
+        {
+            await _app.Hub.AddGameAsync(item.Result.ThreadId.ToString());
+            item.IsInLibrary = true;
+            _libraryThreadIds.Add(item.Result.ThreadId);
+            Status = $"Added {item.Result.Title}";
+            _toasts.Success($"Added to library · {item.Result.Title}");
+        }
+        catch (Exception ex) { Error = ex.Message; _toasts.Error(ex.Message); }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task AddByUrlAsync()
+    {
+        if (string.IsNullOrWhiteSpace(AddByUrl)) return;
+        Busy = true; Error = null;
+        try
+        {
+            var detail = await _app.Hub.AddGameAsync(AddByUrl.Trim());
+            Status = $"Added {detail.Game.Title}";
+            _toasts.Success($"Added to library · {detail.Game.Title}");
+            if (detail.Game.F95ThreadId is long tid)
+                _libraryThreadIds.Add(tid);
+            foreach (var r in Results.Where(x => x.Result.ThreadId == detail.Game.F95ThreadId))
+                r.IsInLibrary = true;
+            AddByUrl = "";
+        }
+        catch (Exception ex) { Error = ex.Message; _toasts.Error(ex.Message); }
+        finally { Busy = false; }
+    }
+}
+
+public partial class DownloadsViewModel : ViewModelBase
+{
+    private readonly AfterglowAppService _app;
+    private readonly MediaCacheService _media;
+    private readonly Dictionary<Guid, DownloadItemViewModel> _byId = new();
+    private readonly HashSet<long> _coverRequested = new();
+
+    public DownloadsViewModel(AfterglowAppService app, MediaCacheService media)
+    {
+        _app = app;
+        _media = media;
+        _app.Downloads.JobChanged += (_, job) =>
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => Upsert(job));
+        };
+    }
+
+    public ObservableCollection<DownloadItemViewModel> ActiveJobs { get; } = [];
+    public ObservableCollection<DownloadItemViewModel> FinishedJobs { get; } = [];
+
+    [ObservableProperty] private bool _hasActive;
+    [ObservableProperty] private bool _hasFinished;
+    [ObservableProperty] private bool _isEmpty = true;
+
+    public async Task RefreshAsync()
+    {
+        ActiveJobs.Clear();
+        FinishedJobs.Clear();
+        _byId.Clear();
+        _coverRequested.Clear();
+        foreach (var j in await _app.Database.GetDownloadJobsAsync())
+            Upsert(j);
+        Recount();
+    }
+
+    [RelayCommand]
+    private async Task Refresh() => await RefreshAsync();
+
+    [RelayCommand]
+    private async Task Remove(DownloadItemViewModel? item)
+    {
+        if (item is null) return;
+        await _app.Downloads.RemoveJobAsync(item.Id);
+        if (_byId.Remove(item.Id))
+        {
+            ActiveJobs.Remove(item);
+            FinishedJobs.Remove(item);
+            Recount();
+        }
+    }
+
+    [RelayCommand]
+    private async Task ClearFinished()
+    {
+        await _app.Downloads.ClearFinishedAsync();
+        FinishedJobs.Clear();
+        foreach (var id in _byId.Where(kv => !kv.Value.IsActive).Select(kv => kv.Key).ToList())
+            _byId.Remove(id);
+        Recount();
+    }
+
+    private void Upsert(DownloadJob job)
+    {
+        if (!_byId.TryGetValue(job.Id, out var vm))
+        {
+            vm = new DownloadItemViewModel();
+            _byId[job.Id] = vm;
+        }
+        vm.Apply(job);
+        EnsureCover(vm);
+
+        var wantActive = vm.IsActive;
+        var inActive = ActiveJobs.Contains(vm);
+        var inFinished = FinishedJobs.Contains(vm);
+        if (wantActive)
+        {
+            if (inFinished) FinishedJobs.Remove(vm);
+            if (!inActive) ActiveJobs.Insert(0, vm);
+        }
+        else
+        {
+            if (inActive) ActiveJobs.Remove(vm);
+            if (!inFinished) FinishedJobs.Insert(0, vm);
+        }
+        Recount();
+    }
+
+    private void EnsureCover(DownloadItemViewModel vm)
+    {
+        if (vm.Cover is not null || vm.GameId <= 0) return;
+        if (!_coverRequested.Add(vm.GameId)) return;
+        _ = LoadCoverAsync(vm.GameId);
+    }
+
+    private async Task LoadCoverAsync(long gameId)
+    {
+        try
+        {
+            var detail = await _app.Hub.GetGameAsync(gameId);
+            var url = detail.CoverUrl ?? detail.CoverFullUrl;
+            if (string.IsNullOrWhiteSpace(url)) return;
+            var bmp = await _media.GetAsync(url);
+            if (bmp is null) return;
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                foreach (var item in _byId.Values.Where(x => x.GameId == gameId))
+                    item.Cover = bmp;
+            });
+        }
+        catch
+        {
+            _coverRequested.Remove(gameId);
+        }
+    }
+
+    private void Recount()
+    {
+        HasActive = ActiveJobs.Count > 0;
+        HasFinished = FinishedJobs.Count > 0;
+        IsEmpty = !HasActive && !HasFinished;
+    }
+}
+
+public partial class DownloadItemViewModel : ViewModelBase
+{
+    [ObservableProperty] private Guid _id;
+    [ObservableProperty] private long _gameId;
+    [ObservableProperty] private string _title = "Game";
+    [ObservableProperty] private string _subtitle = "";
+    [ObservableProperty] private string _statusText = "";
+    [ObservableProperty] private string _progressText = "";
+    [ObservableProperty] private double _progress;
+    [ObservableProperty] private string? _error;
+    [ObservableProperty] private bool _isActive;
+    [ObservableProperty] private Bitmap? _cover;
+
+    public void Apply(DownloadJob job)
+    {
+        Id = job.Id;
+        GameId = job.GameId;
+        Title = string.IsNullOrWhiteSpace(job.GameTitle) ? $"Game #{job.GameId}" : job.GameTitle!;
+        Subtitle = job.Host switch
+        {
+            "archive" => "Local archive",
+            "folder" => "Link folder",
+            "local" => "Local file",
+            _ => string.IsNullOrWhiteSpace(job.Host) ? "" : job.Host
+        };
+        Progress = job.Progress;
+        Error = job.Status is DownloadJobStatus.Failed ? job.Error : null;
+        IsActive = job.Status is DownloadJobStatus.Queued or DownloadJobStatus.Resolving
+            or DownloadJobStatus.Downloading or DownloadJobStatus.Extracting
+            or DownloadJobStatus.OpenedInBrowser;
+
+        StatusText = job.Status switch
+        {
+            DownloadJobStatus.Queued => "Queued",
+            DownloadJobStatus.Resolving => "Resolving link…",
+            DownloadJobStatus.OpenedInBrowser => "Waiting in Afterglow Browser…",
+            DownloadJobStatus.Downloading => FormatSpeed(job),
+            DownloadJobStatus.Extracting when job.Host is "folder" => "Linking folder…",
+            DownloadJobStatus.Extracting when job.Host is "archive" or "local" => "Extracting archive…",
+            DownloadJobStatus.Extracting => "Extracting…",
+            DownloadJobStatus.Completed when job.Host is "folder" => "Folder linked",
+            DownloadJobStatus.Completed when job.Host is "archive" or "local" => "Installed",
+            DownloadJobStatus.Completed => "Completed",
+            DownloadJobStatus.Failed => "Failed",
+            DownloadJobStatus.Cancelled => "Cancelled",
+            _ => job.Status.ToString()
+        };
+
+        ProgressText = job.Status switch
+        {
+            DownloadJobStatus.Downloading =>
+                job.TotalBytes is > 0
+                    ? $"{FormatBytes(job.BytesReceived)} / {FormatBytes(job.TotalBytes.Value)} · {job.Progress:P0}"
+                    : $"{FormatBytes(job.BytesReceived)} · {job.Progress:P0}",
+            DownloadJobStatus.Extracting when job.Host is "archive" or "local" =>
+                job.TotalBytes is > 0 && job.TotalBytes <= 100_000 && job.BytesReceived <= job.TotalBytes
+                    ? $"{job.BytesReceived} / {job.TotalBytes} files · {job.Progress:P0}"
+                    : job.TotalBytes is > 0
+                        ? $"{FormatBytes(job.BytesReceived)} / {FormatBytes(job.TotalBytes.Value)} · {job.Progress:P0}"
+                        : $"{job.Progress:P0}",
+            DownloadJobStatus.Extracting =>
+                job.Progress > 0 ? $"{job.Progress:P0}" : "",
+            DownloadJobStatus.Completed => "100%",
+            _ => job.Progress > 0 ? $"{job.Progress:P0}" : ""
+        };
+    }
+
+    private static string FormatSpeed(DownloadJob job)
+    {
+        if (job.BytesPerSecond <= 0) return "Downloading…";
+        return $"Downloading · {FormatBytes((long)job.BytesPerSecond)}/s";
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB"];
+        double v = Math.Max(0, bytes);
+        var i = 0;
+        while (v >= 1024 && i < units.Length - 1) { v /= 1024; i++; }
+        return $"{v:0.##} {units[i]}";
+    }
+}
+
+public partial class SettingsViewModel : ViewModelBase
+{
+    private readonly AfterglowAppService _app;
+    private readonly Action _onReconfigured;
+    private readonly Action _onFactoryReset;
+
+    public SettingsViewModel(AfterglowAppService app, Action onReconfigured, Action onFactoryReset)
+    {
+        _app = app;
+        _onReconfigured = onReconfigured;
+        _onFactoryReset = onFactoryReset;
+    }
+
+    [ObservableProperty] private string _modeLabel = "";
+    [ObservableProperty] private string _remoteUrl = "";
+    [ObservableProperty] private string _password = "";
+    [ObservableProperty] private string _libraryRoot = "";
+    [ObservableProperty] private string _accentHex = UiPreferences.DefaultAccentHex;
+    [ObservableProperty] private Color _accentColor = Color.Parse(UiPreferences.DefaultAccentHex);
+    [ObservableProperty] private bool _saveSyncEnabled = true;
+    [ObservableProperty] private int _saveSyncMax = 10;
+    [ObservableProperty] private bool _saveSyncRolling = true;
+    [ObservableProperty] private string? _status;
+    [ObservableProperty] private string? _error;
+    [ObservableProperty] private bool _busy;
+    [ObservableProperty] private string _sidecarInfo = "";
+    [ObservableProperty] private string _f95Username = "";
+    [ObservableProperty] private string _f95Password = "";
+    [ObservableProperty] private string _f95Cookies = "";
+    [ObservableProperty] private string _f95Status = "F95 status: unknown";
+    [ObservableProperty] private string _hubAppPassword = "";
+    [ObservableProperty] private string _appPasswordStatus = "App password: unknown";
+    [ObservableProperty] private bool _appPasswordSet;
+    [ObservableProperty] private string _tagClickAction = "library";
+    [ObservableProperty] private string _storageSummary = "Storage: not loaded";
+    public string[] TagClickOptions { get; } = ["library", "browse"];
+
+    public async Task LoadAsync()
+    {
+        ModeLabel = _app.Connection.Mode.ToString();
+        RemoteUrl = _app.Connection.RemoteApiBase ?? "";
+        LibraryRoot = _app.Preferences.LibraryRoot;
+        AccentHex = _app.Preferences.AccentHex;
+        if (ThemeAccent.TryParseColor(AccentHex, out var c))
+            AccentColor = c;
+        var found = SidecarBootstrap.FindExistingExecutable();
+        SidecarInfo = found is null
+            ? "No local avn-hub.exe found yet — Use Local / Prepare sidecar will locate or build one."
+            : $"Sidecar binary: {found}";
+        Error = null;
+        try
+        {
+            var s = await _app.Hub.GetSettingsAsync();
+            ApplyHubSettings(s);
+            try
+            {
+                var st = await _app.Hub.GetStorageAsync();
+                StorageSummary =
+                    $"Data dir: {st.DataDir}\n" +
+                    $"DB {FormatBytes(st.DatabaseBytes)} · media {FormatBytes(st.MediaCacheBytes)} · " +
+                    $"saves {FormatBytes(st.SavesBytes)} · patches {FormatBytes(st.PatchesBytes)} · " +
+                    $"total {FormatBytes(st.DataDirBytes)}";
+            }
+            catch (Exception ex)
+            {
+                StorageSummary = "Storage unavailable: " + ex.Message;
+            }
+        }
+        catch (Exception ex) { Error = "Could not load hub settings: " + ex.Message; }
+    }
+
+    private void ApplyHubSettings(Afterglow.Core.Models.SettingsView s)
+    {
+        SaveSyncEnabled = s.SaveSyncEnabled;
+        SaveSyncMax = s.SaveSyncMaxPerGame;
+        SaveSyncRolling = s.SaveSyncRolling;
+        F95Username = s.F95Username ?? "";
+        F95Status = s.F95Authenticated
+            ? $"Status: authenticated{(s.F95CookiesSet ? " · cookies saved" : "")}"
+            : $"Status: not authenticated{(s.F95CookiesSet ? " · cookies saved" : "")} — login required for Browse/links.";
+        AppPasswordSet = s.AppPasswordSet;
+        AppPasswordStatus = s.AppPasswordSet
+            ? "Password is configured. Clients authenticate with a Bearer token."
+            : "No password set — API is open. Set one for production / Remote.";
+        TagClickAction = s.TagClickAction is "browse" ? "browse" : "library";
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB"];
+        double v = bytes;
+        var i = 0;
+        while (v >= 1024 && i < units.Length - 1) { v /= 1024; i++; }
+        return $"{v:0.##} {units[i]}";
+    }
+
+    partial void OnAccentColorChanged(Color value)
+    {
+        AccentHex = ThemeAccent.ToHex(value);
+        ThemeAccent.Apply(AccentHex);
+    }
+
+    partial void OnAccentHexChanged(string value)
+    {
+        if (ThemeAccent.TryParseColor(value, out var c) && c != AccentColor)
+            AccentColor = c;
+    }
+
+    [RelayCommand]
+    private async Task F95LoginAsync()
+    {
+        Busy = true; Error = null; Status = "Logging into F95Zone…";
+        try
+        {
+            var res = await _app.Hub.F95LoginAsync(F95Username.Trim(), F95Password);
+            F95Password = "";
+            Status = string.IsNullOrWhiteSpace(res.Message) ? "Logged in to F95Zone." : res.Message;
+            await LoadAsync();
+        }
+        catch (Exception ex) { Error = ex.Message; Status = null; }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task F95CookiesAsync()
+    {
+        Busy = true; Error = null; Status = "Saving F95 cookies…";
+        try
+        {
+            var res = await _app.Hub.F95CookiesAsync(F95Cookies);
+            F95Cookies = "";
+            Status = string.IsNullOrWhiteSpace(res.Message) ? "Cookies saved." : res.Message;
+            await LoadAsync();
+        }
+        catch (Exception ex) { Error = ex.Message; Status = null; }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task SetAppPasswordAsync()
+    {
+        if (string.IsNullOrWhiteSpace(HubAppPassword))
+        {
+            Error = "Enter a new hub app password first.";
+            return;
+        }
+        Busy = true; Error = null; Status = "Setting hub app password…";
+        try
+        {
+            ApplyHubSettings(await _app.Hub.UpdateSettingsAsync(new UpdateSettingsRequest { AppPassword = HubAppPassword }));
+            HubAppPassword = "";
+            Status = "Hub app password updated.";
+        }
+        catch (Exception ex) { Error = ex.Message; Status = null; }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task RemoveAppPasswordAsync()
+    {
+        Busy = true; Error = null; Status = "Removing hub app password…";
+        try
+        {
+            ApplyHubSettings(await _app.Hub.UpdateSettingsAsync(new UpdateSettingsRequest { AppPasswordRemove = true }));
+            Status = "Hub app password removed — API is open until you set one again.";
+        }
+        catch (Exception ex) { Error = ex.Message; Status = null; }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task SaveTagClickAsync()
+    {
+        Busy = true; Error = null; Status = "Saving tag click action…";
+        try
+        {
+            ApplyHubSettings(await _app.Hub.UpdateSettingsAsync(new UpdateSettingsRequest { TagClickAction = TagClickAction }));
+            Status = TagClickAction == "browse" ? "Tag clicks open Browse." : "Tag clicks filter Library.";
+        }
+        catch (Exception ex) { Error = ex.Message; Status = null; }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task PurgeHubMediaAsync()
+    {
+        Busy = true; Error = null; Status = "Purging hub media cache…";
+        try
+        {
+            await _app.Hub.PurgeMediaAsync();
+            Status = "Hub media cache purged.";
+            await LoadAsync();
+        }
+        catch (Exception ex) { Error = ex.Message; Status = null; }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private void ResetAccent()
+    {
+        AccentHex = UiPreferences.DefaultAccentHex;
+        AccentColor = Color.Parse(UiPreferences.DefaultAccentHex);
+        ThemeAccent.Apply(AccentHex);
+    }
+
+    public async Task PickLibraryFolderAsync(TopLevel topLevel)
+    {
+        var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Choose library folder",
+            AllowMultiple = false
+        });
+        if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } path)
+            LibraryRoot = path;
+    }
+
+    [RelayCommand]
+    private async Task SaveLocalPrefsAsync()
+    {
+        Busy = true; Error = null;
+        try
+        {
+            if (!ThemeAccent.TryParseColor(AccentHex, out _))
+                throw new InvalidOperationException("Accent must be a valid hex color like #3D9CF0.");
+            await _app.SavePreferencesAsync(new UiPreferences
+            {
+                AccentHex = AccentHex.StartsWith('#') ? AccentHex : "#" + AccentHex,
+                GlassBlur = _app.Preferences.GlassBlur,
+                CompactDensity = _app.Preferences.CompactDensity,
+                LibraryRoot = LibraryRoot,
+                DownloadConcurrency = _app.Preferences.DownloadConcurrency,
+                AutoExtract = _app.Preferences.AutoExtract,
+                LibrarySetupComplete = true
+            });
+            ThemeAccent.Apply(_app.Preferences.AccentHex);
+            Status = "Local preferences saved.";
+        }
+        catch (Exception ex) { Error = ex.Message; Status = null; }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task SaveHubSyncAsync()
+    {
+        Busy = true; Error = null; Status = "Saving hub sync settings…";
+        try
+        {
+            await _app.Hub.UpdateSettingsAsync(new UpdateSettingsRequest
+            {
+                SaveSyncEnabled = SaveSyncEnabled,
+                SaveSyncMaxPerGame = SaveSyncMax,
+                SaveSyncRolling = SaveSyncRolling
+            });
+            Status = "Save sync settings updated on hub.";
+        }
+        catch (Exception ex) { Error = ex.Message; Status = null; }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task SwitchRemoteAsync()
+    {
+        Busy = true; Error = null; Status = "Switching to Remote…";
+        try
+        {
+            await _app.SwitchToRemoteAsync(RemoteUrl.Trim(), string.IsNullOrWhiteSpace(Password) ? null : Password);
+            ModeLabel = "Remote";
+            Status = "Switched to Remote (sidecar stopped).";
+            Password = "";
+            _onReconfigured();
+        }
+        catch (Exception ex) { Error = ex.Message; Status = null; }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task SwitchLocalAsync()
+    {
+        Busy = true; Error = null; Status = "Preparing Local hub…";
+        try
+        {
+            await _app.SwitchToLocalAsync(new Progress<string>(m => Status = m));
+            ModeLabel = "Local";
+            Status = "Switched to Local — data stays on this PC.";
+            SidecarInfo = _app.Sidecar.LastExecutable is null
+                ? SidecarInfo
+                : $"Sidecar binary: {_app.Sidecar.LastExecutable}";
+            _onReconfigured();
+        }
+        catch (Exception ex) { Error = ex.Message; Status = null; }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task PrepareSidecarAsync()
+    {
+        Busy = true; Error = null; Status = "Preparing sidecar…";
+        try
+        {
+            var path = await SidecarBootstrap.EnsureAsync(new Progress<string>(m => Status = m), forceRebuild: true);
+            SidecarInfo = $"Sidecar binary: {path}";
+            Status = "Sidecar ready (not started until you Use Local).";
+        }
+        catch (Exception ex) { Error = ex.Message; Status = null; }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task ResetFactoryAsync()
+    {
+        Busy = true; Error = null; Status = "Resetting…";
+        try
+        {
+            await _app.ResetToFactoryAsync();
+            ThemeAccent.Apply(UiPreferences.DefaultAccentHex);
+            Status = "Factory reset complete.";
+            _onFactoryReset();
+        }
+        catch (Exception ex) { Error = ex.Message; Status = null; }
+        finally { Busy = false; }
+    }
+}
+
+public partial class ScreenshotThumbViewModel : ViewModelBase
+{
+    public int Index { get; init; }
+    public string Url { get; init; } = "";
+    public string? FallbackUrl { get; init; }
+    public bool CanSetCover { get; init; }
+    [ObservableProperty] private Bitmap? _image;
+    [ObservableProperty] private AnimatedMedia? _animation;
+    [ObservableProperty] private bool _isSelected;
+    public bool IsAnimated => Animation?.IsAnimated == true;
+    partial void OnAnimationChanged(AnimatedMedia? value) => OnPropertyChanged(nameof(IsAnimated));
+}
+
+public partial class StarSlotViewModel : ViewModelBase
+{
+    public int Index { get; init; }
+    [ObservableProperty] private double _fill;
+    public double FillWidth => Math.Clamp(Fill, 0, 1) * 28;
+    /// <summary>Invariant half-star command parameter (e.g. "1.5").</summary>
+    public string HalfParam => (Index + 0.5).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+    /// <summary>Invariant full-star command parameter (e.g. "2.0").</summary>
+    public string FullParam => (Index + 1.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+    partial void OnFillChanged(double value) => OnPropertyChanged(nameof(FillWidth));
+}
+
+public partial class PlayStatusPillViewModel : ViewModelBase
+{
+    public required string Value { get; init; }
+    public required string Label { get; init; }
+    [ObservableProperty] private bool _isActive;
+
+    public IBrush PillBrush => IsActive ? ActiveFill : SoftFill;
+    public IBrush PillBorder => IsActive ? ActiveBorder : SoftBorder;
+    public IBrush PillForeground => IsActive ? Brushes.White : SoftForeground;
+
+    private IBrush SoftFill => new SolidColorBrush(Color.Parse("#22161A22"));
+    private IBrush SoftBorder => new SolidColorBrush(Color.Parse("#44FFFFFF"));
+    private IBrush SoftForeground => new SolidColorBrush(Color.Parse("#B0B8C4"));
+
+    private IBrush ActiveFill => Value switch
+    {
+        "playing" => new SolidColorBrush(Color.Parse("#2A5F9E")),
+        "completed" => new SolidColorBrush(Color.Parse("#1F6B45")),
+        "dropped" => new SolidColorBrush(Color.Parse("#8A3040")),
+        _ => new SolidColorBrush(Color.Parse("#3A4658"))
+    };
+
+    private IBrush ActiveBorder => Value switch
+    {
+        "playing" => new SolidColorBrush(Color.Parse("#4A8FD4")),
+        "completed" => new SolidColorBrush(Color.Parse("#3D9A66")),
+        "dropped" => new SolidColorBrush(Color.Parse("#C45A6A")),
+        _ => new SolidColorBrush(Color.Parse("#5A6A7E"))
+    };
+
+    partial void OnIsActiveChanged(bool value)
+    {
+        OnPropertyChanged(nameof(PillBrush));
+        OnPropertyChanged(nameof(PillBorder));
+        OnPropertyChanged(nameof(PillForeground));
+    }
+}
+
+public partial class GameDetailViewModel : ViewModelBase
+{
+    private readonly AfterglowAppService _app;
+    private readonly MediaCacheService _media;
+    private readonly ToastService _toasts;
+    private readonly Action _back;
+    private readonly Action _goDownloads;
+
+    public GameDetailViewModel(AfterglowAppService app, MediaCacheService media, Action back, Action goDownloads, ToastService toasts)
+    {
+        _app = app;
+        _media = media;
+        _back = back;
+        _goDownloads = goDownloads;
+        _toasts = toasts;
+        foreach (var (value, label) in new[]
+                 {
+                     ("unplayed", "Unplayed"), ("playing", "Playing"),
+                     ("completed", "Completed"), ("dropped", "Dropped")
+                 })
+            StatusPills.Add(new PlayStatusPillViewModel { Value = value, Label = label });
+        for (var i = 0; i < 5; i++)
+        {
+            YourStars.Add(new StarSlotViewModel { Index = i });
+            F95Stars.Add(new StarSlotViewModel { Index = i });
+        }
+    }
+
+    [ObservableProperty] private long _gameId;
+    [ObservableProperty] private string _title = "";
+    [ObservableProperty] private string _meta = "";
+    [ObservableProperty] private string? _description;
+    [ObservableProperty] private bool _isInstalled;
+    [ObservableProperty] private string? _installPath;
+    [ObservableProperty] private string? _archivePath;
+    [ObservableProperty] private string? _status;
+    [ObservableProperty] private string? _error;
+    [ObservableProperty] private bool _busy;
+    [ObservableProperty] private Bitmap? _cover;
+    [ObservableProperty] private Bitmap? _selectedScreenshot;
+    [ObservableProperty] private AnimatedMedia? _selectedAnimation;
+    [ObservableProperty] private bool _hasScreenshots;
+    [ObservableProperty] private bool _isGalleryOpen;
+    [ObservableProperty] private int _galleryIndex;
+    [ObservableProperty] private Bitmap? _galleryImage;
+    [ObservableProperty] private AnimatedMedia? _galleryAnimation;
+    [ObservableProperty] private string _galleryCaption = "";
+    [ObservableProperty] private bool _canSetGalleryCover;
+    [ObservableProperty] private bool _isCustomCover;
+    [ObservableProperty] private bool _downloadsExpanded = true;
+    [ObservableProperty] private string _platformFilter = "All";
+    [ObservableProperty] private string? _mediaStatus;
+
+    public string DownloadsCollapsedHint => IsInstalled
+        ? "Collapsed while installed · click to expand"
+        : "Links from the F95 thread";
+    public string DownloadsChevron => DownloadsExpanded ? "▾" : "▸";
+
+    public ObservableCollection<DownloadLinkItemViewModel> AllLinks { get; } = [];
+    public ObservableCollection<DownloadLinkItemViewModel> Links { get; } = [];
+    public ObservableCollection<string> PlatformFilters { get; } = ["All", "Windows", "Linux", "Mac", "Android", "Unknown"];
+    public ObservableCollection<GameSave> Saves { get; } = [];
+    public ObservableCollection<ScreenshotThumbViewModel> Screenshots { get; } = [];
+    public ObservableCollection<PlayStatusPillViewModel> StatusPills { get; } = [];
+    public ObservableCollection<StarSlotViewModel> YourStars { get; } = [];
+    public ObservableCollection<StarSlotViewModel> F95Stars { get; } = [];
+    [ObservableProperty] private string? _f95Url;
+    [ObservableProperty] private string _playStatus = "unplayed";
+    [ObservableProperty] private double? _userRating;
+    [ObservableProperty] private double? _ratingHover;
+    [ObservableProperty] private double? _f95Rating;
+    [ObservableProperty] private string _f95RatingText = "—";
+    [ObservableProperty] private string _userRatingText = "—";
+    [ObservableProperty] private string _userNotes = "";
+    [ObservableProperty] private string _playStatusBadgeLabel = "Unplayed";
+    [ObservableProperty] private IBrush _playStatusBadgeBrush = new SolidColorBrush(Color.Parse("#3A4658"));
+    [ObservableProperty] private IBrush _playStatusBadgeBorder = new SolidColorBrush(Color.Parse("#5A6A7E"));
+    [ObservableProperty] private string _galleryHint = "No screenshots yet — Refresh metadata to pull the gallery onto the hub.";
+
+    public async Task LoadAsync(long id)
+    {
+        GameId = id;
+        Busy = true; Error = null; MediaStatus = null;
+        Cover = null;
+        SelectedScreenshot = null;
+        Screenshots.Clear();
+        HasScreenshots = false;
+        GalleryHint = "Loading screenshots…";
+        F95Url = null;
+        AllLinks.Clear();
+        Links.Clear();
+        try
+        {
+            var detail = await _app.Hub.GetGameAsync(id);
+            await ApplyDetailAsync(detail);
+        }
+        catch (Exception ex) { Error = ex.Message; }
+        finally { Busy = false; }
+    }
+
+    private async Task ApplyDetailAsync(GameDetail detail)
+    {
+        Title = detail.Game.Title;
+        Meta = string.Join(" · ", new[]
+        {
+            detail.Game.Developer,
+            detail.Game.Version,
+            LibraryPaths.FormatPlaytime(detail.Game.PlaytimeSeconds)
+        }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        Description = detail.Game.Description;
+        F95Url = detail.Game.F95Url;
+        PlayStatus = NormalizePlayStatus(detail.Game.PlayStatus);
+        UserRating = detail.Game.UserRating is > 0 ? detail.Game.UserRating : null;
+        F95Rating = detail.Game.Rating is > 0 ? detail.Game.Rating : null;
+        UserNotes = detail.Game.UserNotes ?? "";
+        RefreshStatusPills();
+        RefreshStars();
+        Saves.Clear();
+        foreach (var s in detail.Saves) Saves.Add(s);
+        var install = await _app.Database.GetInstallAsync(detail.Game.Id);
+        IsInstalled = install is not null;
+        InstallPath = install?.InstallPath;
+        ArchivePath = null;
+        DownloadsExpanded = !IsInstalled;
+        IsCustomCover = detail.IsCustomCover;
+
+        var coverCandidates = new List<string>();
+        if (!string.IsNullOrWhiteSpace(detail.CoverUrl)) coverCandidates.Add(detail.CoverUrl!);
+        if (!string.IsNullOrWhiteSpace(detail.CoverFullUrl)) coverCandidates.Add(detail.CoverFullUrl!);
+        if (coverCandidates.Count == 0)
+            MediaStatus = "Hub returned no cover_url — try Refresh metadata.";
+        await LoadCoverAsync(coverCandidates);
+        if (Cover is null && coverCandidates.Count > 0)
+            MediaStatus = _media.LastError ?? "Cover download/decode failed.";
+
+        Screenshots.Clear();
+        SelectedScreenshot = null;
+        SelectedAnimation = null;
+        IsGalleryOpen = false;
+        var shotIndex = 0;
+        foreach (var shot in detail.Screenshots)
+        {
+            // Match web: prefer hub cache, always keep F95 full_url as fallback source.
+            var cached = string.IsNullOrWhiteSpace(shot.CachedUrl) ? null : shot.CachedUrl!.Replace('\\', '/');
+            var full = string.IsNullOrWhiteSpace(shot.FullUrl) ? null : shot.FullUrl!.Replace('\\', '/');
+            var primary = cached ?? full;
+            if (string.IsNullOrWhiteSpace(primary)) continue;
+            var fallback = cached is not null && full is not null
+                && !string.Equals(cached, full, StringComparison.OrdinalIgnoreCase)
+                ? full
+                : null;
+            var thumb = new ScreenshotThumbViewModel
+            {
+                Index = shotIndex++,
+                Url = primary,
+                FallbackUrl = fallback,
+                CanSetCover = cached is not null
+            };
+            Screenshots.Add(thumb);
+            _ = LoadShotAsync(thumb);
+        }
+        HasScreenshots = Screenshots.Count > 0;
+        GalleryHint = HasScreenshots
+            ? ""
+            : "No screenshots yet — Refresh metadata downloads the gallery onto the hub.";
+        if (!HasScreenshots)
+            MediaStatus = (MediaStatus is null ? "" : MediaStatus + "\n") + GalleryHint;
+
+        AllLinks.Clear();
+        try
+        {
+            foreach (var n in DownloadLinkNormalizer.NormalizeAll(await _app.Hub.GetDownloadLinksAsync(detail.Game.Id)))
+            {
+                var item = new DownloadLinkItemViewModel
+                {
+                    Url = n.Url,
+                    Host = n.Host,
+                    Platform = n.Platform,
+                    DisplayName = n.DisplayName,
+                    IsMasked = n.IsMasked
+                };
+                AllLinks.Add(item);
+                _ = LoadHostIconAsync(item);
+            }
+            ApplyPlatformFilter();
+            if (AllLinks.Count == 0)
+                Status = "No hoster download links found on the F95 thread (hub may need F95 login).";
+        }
+        catch (Exception ex) { Status = "Download links unavailable: " + ex.Message; }
+    }
+
+    private async Task LoadHostIconAsync(DownloadLinkItemViewModel item)
+    {
+        var favicon = BrandIcons.FaviconUrl(item.Host);
+        if (favicon is null) return;
+        var bmp = await _media.GetAsync(favicon);
+        if (bmp is null) return;
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => item.HostIcon = bmp);
+    }
+
+    private static string NormalizePlayStatus(string? status)
+    {
+        var s = (status ?? "unplayed").Trim().ToLowerInvariant();
+        return s switch
+        {
+            "finished" or "complete" => "completed",
+            "on_hold" or "on-hold" or "hold" => "playing",
+            "playing" or "completed" or "dropped" or "unplayed" => s,
+            _ => "unplayed"
+        };
+    }
+
+    private void RefreshStatusPills()
+    {
+        foreach (var pill in StatusPills)
+            pill.IsActive = string.Equals(pill.Value, PlayStatus, StringComparison.OrdinalIgnoreCase);
+        var active = StatusPills.FirstOrDefault(p => p.IsActive);
+        PlayStatusBadgeLabel = active?.Label ?? "Unplayed";
+        PlayStatusBadgeBrush = active?.PillBrush ?? new SolidColorBrush(Color.Parse("#3A4658"));
+        PlayStatusBadgeBorder = active?.PillBorder ?? new SolidColorBrush(Color.Parse("#5A6A7E"));
+    }
+
+    private void RefreshStars()
+    {
+        var yours = RatingHover ?? UserRating ?? 0;
+        for (var i = 0; i < YourStars.Count; i++)
+            YourStars[i].Fill = Math.Clamp(yours - i, 0, 1);
+        UserRatingText = UserRating is > 0 ? UserRating.Value.ToString("0.0") : "—";
+
+        var f95 = F95Rating ?? 0;
+        for (var i = 0; i < F95Stars.Count; i++)
+            F95Stars[i].Fill = Math.Clamp(f95 - i, 0, 1);
+        F95RatingText = F95Rating is > 0 ? F95Rating.Value.ToString("0.0") : "—";
+    }
+
+    partial void OnRatingHoverChanged(double? value) => RefreshStars();
+    partial void OnUserRatingChanged(double? value) => RefreshStars();
+    partial void OnF95RatingChanged(double? value) => RefreshStars();
+    partial void OnPlayStatusChanged(string value) => RefreshStatusPills();
+    partial void OnIsInstalledChanged(bool value) => OnPropertyChanged(nameof(DownloadsCollapsedHint));
+    partial void OnDownloadsExpandedChanged(bool value) => OnPropertyChanged(nameof(DownloadsChevron));
+    partial void OnBusyChanged(bool value)
+    {
+        if (IsGalleryOpen && GalleryIndex >= 0 && GalleryIndex < Screenshots.Count)
+            CanSetGalleryCover = Screenshots[GalleryIndex].CanSetCover && !value;
+    }
+
+    partial void OnPlatformFilterChanged(string value) => ApplyPlatformFilter();
+
+    private void ApplyPlatformFilter()
+    {
+        Links.Clear();
+        IEnumerable<DownloadLinkItemViewModel> q = AllLinks;
+        if (!string.Equals(PlatformFilter, "All", StringComparison.OrdinalIgnoreCase))
+        {
+            q = PlatformFilter.Equals("Unknown", StringComparison.OrdinalIgnoreCase)
+                ? AllLinks.Where(l => string.IsNullOrWhiteSpace(l.Platform))
+                : AllLinks.Where(l => string.Equals(l.Platform, PlatformFilter, StringComparison.OrdinalIgnoreCase));
+        }
+        foreach (var link in q) Links.Add(link);
+    }
+
+    private async Task LoadCoverAsync(IEnumerable<string> urls)
+    {
+        foreach (var url in urls.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var bmp = await _media.GetAsync(url);
+            if (bmp is not null)
+            {
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => Cover = bmp);
+                return;
+            }
+        }
+    }
+
+    private async Task LoadShotAsync(ScreenshotThumbViewModel thumb)
+    {
+        var media = await _media.GetMediaAsync(thumb.Url);
+        if (media is null && !string.IsNullOrWhiteSpace(thumb.FallbackUrl))
+            media = await _media.GetMediaAsync(thumb.FallbackUrl);
+        if (media is null)
+        {
+            if (_media.LastError is not null)
+                MediaStatus = _media.LastError;
+            return;
+        }
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            thumb.Image = media.Preview;
+            thumb.Animation = media.IsAnimated ? media : null;
+            if (SelectedScreenshot is null)
+            {
+                SelectedScreenshot = media.Preview;
+                SelectedAnimation = media.IsAnimated ? media : null;
+            }
+            if (IsGalleryOpen && GalleryIndex == thumb.Index)
+            {
+                GalleryImage = media.Preview;
+                GalleryAnimation = media.IsAnimated ? media : null;
+            }
+        });
+    }
+
+    [RelayCommand]
+    private void Back() => _back();
+
+    [RelayCommand]
+    private void OpenF95()
+    {
+        if (string.IsNullOrWhiteSpace(F95Url)) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(F95Url) { UseShellExecute = true });
+        }
+        catch (Exception ex) { Error = ex.Message; }
+    }
+
+    [RelayCommand]
+    private void SelectScreenshot(ScreenshotThumbViewModel? shot)
+    {
+        if (shot is null) return;
+        OpenGalleryAt(shot.Index);
+    }
+
+    [RelayCommand]
+    private void OpenGallery()
+    {
+        if (!HasScreenshots) return;
+        var idx = Screenshots.ToList().FindIndex(s => s.Image == SelectedScreenshot);
+        OpenGalleryAt(idx >= 0 ? idx : 0);
+    }
+
+    [RelayCommand]
+    private void CloseGallery()
+    {
+        IsGalleryOpen = false;
+        GalleryAnimation = null;
+    }
+
+    [RelayCommand]
+    private void GalleryPrev()
+    {
+        if (Screenshots.Count == 0) return;
+        OpenGalleryAt((GalleryIndex - 1 + Screenshots.Count) % Screenshots.Count);
+    }
+
+    [RelayCommand]
+    private void GalleryNext()
+    {
+        if (Screenshots.Count == 0) return;
+        OpenGalleryAt((GalleryIndex + 1) % Screenshots.Count);
+    }
+
+    private void OpenGalleryAt(int index)
+    {
+        if (Screenshots.Count == 0) return;
+        index = Math.Clamp(index, 0, Screenshots.Count - 1);
+        GalleryIndex = index;
+        var shot = Screenshots[index];
+        if (shot.Image is not null)
+            SelectedScreenshot = shot.Image;
+        SelectedAnimation = shot.Animation;
+        GalleryImage = shot.Image;
+        GalleryAnimation = shot.Animation;
+        GalleryCaption = $"{index + 1} / {Screenshots.Count}"
+            + (shot.IsAnimated ? " · GIF" : "");
+        CanSetGalleryCover = shot.CanSetCover && !Busy;
+        for (var i = 0; i < Screenshots.Count; i++)
+            Screenshots[i].IsSelected = i == index;
+        IsGalleryOpen = true;
+    }
+
+    [RelayCommand]
+    private async Task SetCoverFromGalleryAsync()
+    {
+        if (!CanSetGalleryCover || Busy) return;
+        var index = GalleryIndex;
+        Busy = true; Error = null;
+        try
+        {
+            var detail = await _app.Hub.SetCoverFromScreenshotAsync(GameId, index);
+            await ApplyDetailAsync(detail);
+            Status = "Cover updated";
+            _toasts.Success("Cover updated");
+            if (HasScreenshots)
+                OpenGalleryAt(Math.Min(index, Screenshots.Count - 1));
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+            _toasts.Error(ex.Message);
+        }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task ResetCoverAsync()
+    {
+        if (Busy) return;
+        Busy = true; Error = null;
+        try
+        {
+            var detail = await _app.Hub.ResetCoverAsync(GameId);
+            await ApplyDetailAsync(detail);
+            Status = "Cover reset";
+            _toasts.Success("Cover reset");
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+            _toasts.Error(ex.Message);
+        }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private void ToggleDownloads() => DownloadsExpanded = !DownloadsExpanded;
+
+    [RelayCommand]
+    private async Task SetPlayStatusAsync(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status) || Busy) return;
+        var next = NormalizePlayStatus(status);
+        var previous = PlayStatus;
+        PlayStatus = next;
+        Busy = true; Error = null;
+        try
+        {
+            await _app.Hub.UpdateGameAsync(GameId, new UpdateGameUserData { PlayStatus = next });
+            Status = "Status updated";
+            _toasts.Success($"Status → {PlayStatusBadgeLabel}");
+        }
+        catch (Exception ex)
+        {
+            PlayStatus = previous;
+            Error = ex.Message;
+            _toasts.Error(ex.Message);
+        }
+        finally { Busy = false; }
+    }
+
+    public void PreviewRating(double? value) => RatingHover = value;
+
+    [RelayCommand]
+    private async Task SetUserRatingAsync(string? raw)
+    {
+        if (Busy) return;
+        double? next = null;
+        if (!string.IsNullOrWhiteSpace(raw) && double.TryParse(raw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+            next = Math.Clamp(Math.Round(parsed * 2) / 2.0, 0.5, 5);
+        // Clicking the same value clears (web behavior).
+        if (UserRating is { } current && next is { } n && Math.Abs(current - n) < 0.01)
+            next = null;
+
+        var previous = UserRating;
+        UserRating = next;
+        RatingHover = null;
+        Busy = true; Error = null;
+        try
+        {
+            await _app.Hub.UpdateGameAsync(GameId, new UpdateGameUserData
+            {
+                UserRating = next,
+                ClearUserRating = next is null ? true : null
+            });
+            Status = next is null ? "Rating cleared" : "Rating saved";
+            if (next is null) _toasts.Info("Rating cleared");
+            else _toasts.Success("Rating saved");
+        }
+        catch (Exception ex)
+        {
+            UserRating = previous;
+            Error = ex.Message;
+            _toasts.Error(ex.Message);
+        }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task SaveNotesAsync()
+    {
+        Busy = true; Error = null; Status = "Saving…";
+        try
+        {
+            await _app.Hub.UpdateGameAsync(GameId, new UpdateGameUserData { UserNotes = UserNotes });
+            Status = "Notes saved";
+            _toasts.Success("Notes saved");
+        }
+        catch (Exception ex) { Error = ex.Message; Status = null; _toasts.Error(ex.Message); }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task RefreshAsync()
+    {
+        Busy = true; Error = null; GalleryHint = "Refreshing metadata and caching screenshots…";
+        try
+        {
+            await _app.Hub.RefreshGameAsync(GameId);
+            await LoadAsync(GameId);
+            Status = "Refreshed";
+            _toasts.Success("Metadata refreshed");
+            // Background hub cache may still be writing screenshots — poll briefly.
+            if (!HasScreenshots)
+                _ = PollScreenshotsAfterRefreshAsync();
+        }
+        catch (Exception ex) { Error = ex.Message; _toasts.Error(ex.Message); }
+        finally { Busy = false; }
+    }
+
+    private async Task PollScreenshotsAfterRefreshAsync()
+    {
+        for (var i = 0; i < 8; i++)
+        {
+            await Task.Delay(2500);
+            try
+            {
+                var detail = await _app.Hub.GetGameAsync(GameId);
+                var cached = detail.Screenshots.Count(s => !string.IsNullOrWhiteSpace(s.CachedUrl));
+                if (detail.Screenshots.Count == 0) continue;
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (GameId != detail.Game.Id) return;
+                    _ = ApplyDetailAsync(detail).ContinueWith(t =>
+                    {
+                        if (t.IsFaulted) return;
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                        {
+                            if (HasScreenshots)
+                                _toasts.Success(cached > 0
+                                    ? $"Gallery ready · {Screenshots.Count} screenshots"
+                                    : $"Gallery listed · {Screenshots.Count} images");
+                        });
+                    });
+                });
+                await Task.Delay(200);
+                if (detail.Screenshots.Any(s => !string.IsNullOrWhiteSpace(s.CachedUrl)))
+                    return;
+                if (HasScreenshots && i >= 3)
+                    return;
+            }
+            catch { /* keep polling */ }
+        }
+    }
+
+    [RelayCommand]
+    private async Task CheckVersionAsync()
+    {
+        Busy = true; Error = null; Status = "Checking F95 version…";
+        try
+        {
+            var result = await _app.Hub.CheckVersionAsync(GameId);
+            Status = result.UpdateAvailable
+                ? $"Update available: {result.StoredVersion ?? "?"} → {result.LatestVersion}"
+                : $"Up to date ({result.LatestVersion}).";
+            if (result.UpdateAvailable) _toasts.Warning(Status);
+            else _toasts.Success(Status);
+        }
+        catch (Exception ex) { Error = ex.Message; Status = null; _toasts.Error(ex.Message); }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task DeleteFromLibraryAsync()
+    {
+        Busy = true; Error = null; Status = "Removing from hub library…";
+        try
+        {
+            await _app.Hub.DeleteGameAsync(GameId);
+            Status = "Removed from library.";
+            _back();
+        }
+        catch (Exception ex) { Error = ex.Message; Status = null; }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task DownloadLinkAsync(DownloadLinkItemViewModel? link)
+    {
+        if (link is null) return;
+        Busy = true; Error = null;
+        try
+        {
+            // Always queue through DownloadManager. Interactive/masked hosts open Afterglow Browser
+            // and intercepted files are extracted into the library automatically.
+            // Prefer existing install folder; otherwise Steam-like named folder under library root.
+            var existing = await _app.Database.GetInstallAsync(GameId);
+            var root = !string.IsNullOrWhiteSpace(existing?.InstallPath)
+                ? existing!.InstallPath
+                : LibraryPaths.InstallDirectory(_app.Preferences.LibraryRoot, GameId, Title);
+            await _app.Downloads.QueueAsync(
+                GameId,
+                new Uri(link.Url),
+                root,
+                autoExtract: _app.Preferences.AutoExtract,
+                gameTitle: Title);
+            Status = $"Download queued ({link.Host}" + (link.Platform is null ? ")" : $" · {link.Platform})");
+            _toasts.Info($"Queued · {Title}");
+        }
+        catch (Exception ex) { Error = ex.Message; _toasts.Error(ex.Message); }
+        finally { Busy = false; }
+    }
+
+    public async Task PickInstallFolderAsync(TopLevel topLevel)
+    {
+        var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Link game install folder",
+            AllowMultiple = false
+        });
+        if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } path)
+            InstallPath = path;
+    }
+
+    public async Task PickArchiveFileAsync(TopLevel topLevel)
+    {
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose game archive (.zip / .7z / .rar)",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Archives") { Patterns = ["*.zip", "*.7z", "*.rar", "*.tar", "*.gz"] },
+                new FilePickerFileType("All files") { Patterns = ["*.*"] }
+            ]
+        });
+        if (files.Count > 0 && files[0].TryGetLocalPath() is { } path)
+            ArchivePath = path;
+    }
+
+    [RelayCommand]
+    private async Task LinkFolderAsync()
+    {
+        if (string.IsNullOrWhiteSpace(InstallPath) || !Directory.Exists(InstallPath))
+        {
+            Error = "Choose a valid install folder with Browse folder… first.";
+            _toasts.Error(Error);
+            return;
+        }
+
+        try
+        {
+            await _app.Downloads.LinkFolderAsync(GameId, InstallPath, Title);
+            Status = "Linking folder…";
+            _toasts.Info($"Queued · {Title}");
+            _goDownloads();
+        }
+        catch (Exception ex) { Error = ex.Message; _toasts.Error(ex.Message); }
+    }
+
+    [RelayCommand]
+    private async Task InstallArchiveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(ArchivePath) || !File.Exists(ArchivePath))
+        {
+            Error = "Choose an archive file with Browse archive… (.zip / .7z / .rar).";
+            _toasts.Error(Error);
+            return;
+        }
+        if (!ArchiveExtractor.IsArchive(ArchivePath))
+        {
+            Error = "That file does not look like a supported archive.";
+            _toasts.Error(Error);
+            return;
+        }
+
+        try
+        {
+            var existing = await _app.Database.GetInstallAsync(GameId);
+            var dest = !string.IsNullOrWhiteSpace(existing?.InstallPath)
+                ? existing!.InstallPath
+                : LibraryPaths.InstallDirectory(_app.Preferences.LibraryRoot, GameId, Title);
+            await _app.Downloads.ImportLocalArchiveAsync(GameId, ArchivePath, dest, Title);
+            Status = "Extracting archive…";
+            _toasts.Info($"Queued · {Title}");
+            _goDownloads();
+        }
+        catch (Exception ex) { Error = ex.Message; _toasts.Error(ex.Message); }
+    }
+
+    [RelayCommand]
+    private async Task PlayAsync()
+    {
+        Busy = true; Error = null;
+        try
+        {
+            var install = await _app.Database.GetInstallAsync(GameId)
+                ?? throw new InvalidOperationException("Game is not installed on this PC.");
+            var launchedAt = DateTimeOffset.UtcNow;
+            await _app.Launcher.LaunchAsync(install);
+            var playedSecs = Math.Max(0, (long)(DateTimeOffset.UtcNow - launchedAt).TotalSeconds);
+            var synced = 0;
+            GameSave? saved = null;
+            try
+            {
+                synced = await _app.PlaytimeSync.FlushAsync();
+                saved = await _app.RenpySaveSync.UploadNewestAsync(GameId, install.InstallPath);
+            }
+            catch (Exception syncEx)
+            {
+                _toasts.Warning("Play finished, but sync had an issue: " + syncEx.Message);
+            }
+            await LoadAsync(GameId);
+            Status = $"Played {LibraryPaths.FormatPlaytime(playedSecs)}";
+            _toasts.Success(Status + (synced > 0 ? " · playtime synced" : ""));
+            if (saved is not null)
+                _toasts.Success($"Save backed up · {saved.Filename}");
+            else if (playedSecs >= 30)
+                _toasts.Info("No save file found to back up");
+        }
+        catch (Exception ex) { Error = ex.Message; _toasts.Error(ex.Message); }
+        finally { Busy = false; }
+    }
+
+    [RelayCommand]
+    private async Task UninstallLocalAsync()
+    {
+        var install = await _app.Database.GetInstallAsync(GameId);
+        if (install is null)
+        {
+            IsInstalled = false;
+            return;
+        }
+
+        var owner = (Avalonia.Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+        var underLibrary = install.InstallPath.StartsWith(_app.Preferences.LibraryRoot.TrimEnd('\\', '/') + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                           || string.Equals(install.InstallPath.TrimEnd('\\', '/'), _app.Preferences.LibraryRoot.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase);
+        var message = underLibrary
+            ? $"Uninstall {Title}?\n\nThis removes the local install record and deletes files under:\n{install.InstallPath}"
+            : $"Uninstall {Title}?\n\nThis folder is outside your Afterglow library:\n{install.InstallPath}\n\nOnly the install link will be removed — files will be kept.";
+
+        var ok = await ConfirmDialog.ShowAsync(owner, "Uninstall game", message, "Uninstall");
+        if (!ok) return;
+
+        Busy = true; Error = null;
+        try
+        {
+            if (underLibrary && Directory.Exists(install.InstallPath))
+            {
+                try { Directory.Delete(install.InstallPath, recursive: true); }
+                catch (Exception ex)
+                {
+                    _toasts.Warning("Could not delete all files: " + ex.Message);
+                }
+            }
+            await _app.Database.DeleteInstallAsync(GameId);
+            IsInstalled = false;
+            InstallPath = null;
+            Status = underLibrary ? "Uninstalled — local files removed" : "Uninstalled — link removed (files kept)";
+            _toasts.Success(Status);
+        }
+        catch (Exception ex) { Error = ex.Message; _toasts.Error(ex.Message); }
+        finally { Busy = false; }
+    }
+}

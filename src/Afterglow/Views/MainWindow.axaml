@@ -1,0 +1,195 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Afterglow.ViewModels"
+        xmlns:views="using:Afterglow.Views"
+        xmlns:services="using:Afterglow.Services"
+        x:Class="Afterglow.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="Afterglow"
+        Icon="/Assets/avalonia-logo.ico"
+        Width="1360" Height="860"
+        MinWidth="1000" MinHeight="640"
+        CanResize="True"
+        TransparencyLevelHint="AcrylicBlur,Blur,Transparent"
+        Background="Transparent"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="44"
+        WindowDecorations="BorderOnly"
+        WindowStartupLocation="CenterScreen">
+
+  <Panel>
+    <ExperimentalAcrylicBorder IsHitTestVisible="False">
+      <ExperimentalAcrylicBorder.Material>
+        <ExperimentalAcrylicMaterial BackgroundSource="Digger"
+                                     TintColor="#0A0D12"
+                                     TintOpacity="0.55"
+                                     MaterialOpacity="0.82" />
+      </ExperimentalAcrylicBorder.Material>
+    </ExperimentalAcrylicBorder>
+
+    <Grid IsHitTestVisible="False">
+      <Grid.Background>
+        <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+          <GradientStop Color="#551A2A3F" Offset="0" />
+          <GradientStop Color="#00080A10" Offset="0.48" />
+          <GradientStop Color="#553D9CF0" Offset="1" />
+        </LinearGradientBrush>
+      </Grid.Background>
+    </Grid>
+
+    <Ellipse Width="760" Height="520" Margin="-100,-140,0,0"
+             HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False"
+             Opacity="0.42">
+      <Ellipse.Fill>
+        <RadialGradientBrush>
+          <GradientStop Color="#AA3D9CF0" Offset="0" />
+          <GradientStop Color="#00000000" Offset="1" />
+        </RadialGradientBrush>
+      </Ellipse.Fill>
+    </Ellipse>
+    <Ellipse Width="680" Height="560" Margin="0,0,-140,-100"
+             HorizontalAlignment="Right" VerticalAlignment="Bottom" IsHitTestVisible="False"
+             Opacity="0.28">
+      <Ellipse.Fill>
+        <RadialGradientBrush>
+          <GradientStop Color="#88A855F7" Offset="0" />
+          <GradientStop Color="#00000000" Offset="1" />
+        </RadialGradientBrush>
+      </Ellipse.Fill>
+    </Ellipse>
+
+    <!-- Visible edge so BorderOnly chrome reads as a framed window -->
+    <Border BorderBrush="#66C0D0E0" BorderThickness="1" CornerRadius="0" IsHitTestVisible="False" />
+
+    <DockPanel>
+      <Border DockPanel.Dock="Top" Height="44" Background="#55000000"
+              BorderBrush="#22FFFFFF" BorderThickness="0,0,0,1"
+              WindowDecorationProperties.ElementRole="TitleBar"
+              PointerPressed="TitleBar_PointerPressed">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Orientation="Horizontal" Spacing="10" Margin="14,0,0,0" VerticalAlignment="Center">
+            <Image Source="avares://Afterglow/Assets/avn-hub-logo.webp" Height="22" />
+            <TextBlock Text="Afterglow" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding StatusMessage}" Classes="caption" VerticalAlignment="Center" Margin="8,0,0,0" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal"
+                      WindowDecorationProperties.ElementRole="User">
+            <Button Classes="window-chrome" Content="─" Click="Minimize_Click"
+                    WindowDecorationProperties.ElementRole="MinimizeButton"
+                    ToolTip.Tip="Minimize" />
+            <Button x:Name="MaximizeButton" Classes="window-chrome" Content="□" Click="Maximize_Click"
+                    WindowDecorationProperties.ElementRole="MaximizeButton"
+                    ToolTip.Tip="Maximize" />
+            <Button Classes="window-chrome close" Content="✕" Click="Close_Click"
+                    WindowDecorationProperties.ElementRole="CloseButton"
+                    ToolTip.Tip="Close" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border DockPanel.Dock="Top" Margin="16,8,16,0" Classes="glass" Padding="12,10"
+              IsVisible="{Binding ShowLocalBanner}">
+        <TextBlock Text="Local hub — data stays on this PC (not a cloud backup)." Classes="muted" />
+      </Border>
+
+      <DockPanel Margin="16">
+        <Border DockPanel.Dock="Left" Width="240" Margin="0,0,14,0" Classes="glass" Padding="16"
+                IsVisible="{Binding ShowShell}">
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,18">
+              <Image Source="avares://Afterglow/Assets/avn-hub-logo.webp" Height="40" HorizontalAlignment="Left" />
+              <TextBlock Text="Afterglow" Classes="title" FontSize="22" />
+              <TextBlock Text="AVN Hub desktop" Classes="caption" />
+            </StackPanel>
+            <StackPanel Spacing="4">
+              <Button Classes="nav" Content="Library" Command="{Binding NavigateCommand}" CommandParameter="library" />
+              <Button Classes="nav" Content="Browse" Command="{Binding NavigateCommand}" CommandParameter="browse" />
+              <Button Classes="nav" Command="{Binding NavigateCommand}" CommandParameter="downloads"
+                      ToolTip.Tip="{Binding DownloadsNavDetail}">
+                <StackPanel Spacing="4" HorizontalAlignment="Stretch">
+                  <TextBlock Text="Downloads" FontSize="14" />
+                  <TextBlock Text="{Binding DownloadsNavDetail}" Classes="caption" FontSize="11" Opacity="0.8"
+                             IsVisible="{Binding DownloadsActive}" TextTrimming="CharacterEllipsis" />
+                  <ProgressBar Height="3" Minimum="0" Maximum="1" Value="{Binding DownloadsNavProgress}"
+                               IsVisible="{Binding DownloadsNavShowBar}" />
+                </StackPanel>
+              </Button>
+              <Button Classes="nav" Content="Settings" Command="{Binding NavigateCommand}" CommandParameter="settings" />
+            </StackPanel>
+          </DockPanel>
+        </Border>
+
+        <Border Padding="0" Classes.glass-strong="{Binding ShowShell}" CornerRadius="18">
+          <DockPanel>
+            <Border DockPanel.Dock="Top" Padding="22,18"
+                    Background="#18FFFFFF" BorderBrush="#28FFFFFF" BorderThickness="0,0,0,1"
+                    IsVisible="{Binding ShowShell}">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="{Binding NavTitle}" Classes="title" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding ErrorMessage}" Foreground="#E35D6A"
+                           VerticalAlignment="Center"
+                           IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              </Grid>
+            </Border>
+            <ContentControl Margin="8,4,8,8" Content="{Binding CurrentPage}">
+              <ContentControl.DataTemplates>
+                <DataTemplate DataType="vm:FirstRunViewModel">
+                  <views:FirstRunView />
+                </DataTemplate>
+                <DataTemplate DataType="vm:LibrarySetupViewModel">
+                  <views:LibrarySetupView />
+                </DataTemplate>
+                <DataTemplate DataType="vm:LibraryViewModel">
+                  <views:LibraryView />
+                </DataTemplate>
+                <DataTemplate DataType="vm:BrowseViewModel">
+                  <views:BrowseView />
+                </DataTemplate>
+                <DataTemplate DataType="vm:DownloadsViewModel">
+                  <views:DownloadsView />
+                </DataTemplate>
+                <DataTemplate DataType="vm:SettingsViewModel">
+                  <views:SettingsView />
+                </DataTemplate>
+                <DataTemplate DataType="vm:GameDetailViewModel">
+                  <views:GameDetailView />
+                </DataTemplate>
+              </ContentControl.DataTemplates>
+            </ContentControl>
+          </DockPanel>
+        </Border>
+      </DockPanel>
+    </DockPanel>
+
+    <!-- App-wide toasts (Steam-like cards for downloads) -->
+    <ItemsControl ItemsSource="{Binding Toasts.Items}"
+                  HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                  Margin="0,0,24,24" IsHitTestVisible="True" MaxWidth="420" ZIndex="100">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <StackPanel Spacing="10" />
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="services:ToastItem">
+          <Border Classes="toast" Padding="0" MinWidth="300" MaxWidth="420"
+                  ClipToBounds="True">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="0">
+              <Border Width="72" Height="72" Background="#22000000" IsVisible="{Binding HasCover}" ClipToBounds="True"
+                      CornerRadius="14,0,0,14">
+                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+              </Border>
+              <StackPanel Grid.Column="1" Spacing="3" Margin="14,12,14,12" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis"
+                           IsVisible="{Binding HasTitle}" />
+                <TextBlock Text="{Binding Message}" TextWrapping="Wrap" FontSize="13" Opacity="0.95" />
+                <TextBlock Text="{Binding Subtitle}" Classes="caption" Opacity="0.75"
+                           IsVisible="{Binding Subtitle, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              </StackPanel>
+            </Grid>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </Panel>
+</Window>

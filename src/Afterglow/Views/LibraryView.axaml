@@ -1,0 +1,93 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Afterglow.ViewModels"
+             x:Class="Afterglow.Views.LibraryView"
+             x:DataType="vm:LibraryViewModel">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Classes="glass" Padding="14,12" Margin="8,8,8,4" CornerRadius="16">
+      <StackPanel Spacing="8">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBox Width="240" PlaceholderText="Search library…" Text="{Binding Search}" />
+          <ComboBox Width="130" ItemsSource="{Binding SortOptions}" SelectedItem="{Binding Sort}" />
+          <ComboBox Width="140" ItemsSource="{Binding PlayStatusOptions}" SelectedItem="{Binding PlayStatus}" />
+          <Button Classes="accent" Content="Search" Command="{Binding SearchCommand}" />
+          <Button Classes="ghost" Content="Check updates" Command="{Binding CheckUpdatesCommand}" IsEnabled="{Binding !Busy}" />
+          <Button Classes="ghost" Content="Grid" Command="{Binding ToggleViewCommand}" IsVisible="{Binding !GridView}" />
+          <Button Classes="ghost" Content="List" Command="{Binding ToggleViewCommand}" IsVisible="{Binding GridView}" />
+        </StackPanel>
+        <TextBlock Text="{Binding MediaStatus}" Classes="caption" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding Error}" Foreground="#E35D6A" TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
+
+    <!-- Padding gives the host glow room so ScrollViewer does not shear top corners -->
+    <ScrollViewer IsVisible="{Binding GridView}" Padding="6,10,6,18"
+                  HorizontalScrollBarVisibility="Disabled">
+      <ItemsControl ItemsSource="{Binding Games}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:LibraryItemViewModel">
+            <Border Classes="game-card-host" Width="196" Height="292"
+                    PointerPressed="GameCard_PointerPressed" Tag="{Binding}">
+              <Border Classes="game-card">
+                <Border Classes="game-card-face">
+                  <DockPanel>
+                    <Border DockPanel.Dock="Bottom" Classes="game-card-meta" Padding="10,8">
+                      <StackPanel Spacing="2">
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Subtitle}" Classes="caption" TextTrimming="CharacterEllipsis" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <TextBlock Text="{Binding PlaytimeLabel}" Classes="caption" />
+                          <Border Background="{DynamicResource AccentBrush}" CornerRadius="6" Padding="6,2"
+                                  IsVisible="{Binding IsInstalled}" Opacity="0.9">
+                            <TextBlock Text="Installed" FontSize="10" Foreground="White" />
+                          </Border>
+                        </StackPanel>
+                      </StackPanel>
+                    </Border>
+                    <Panel>
+                      <Border Classes="cover-fallback" />
+                      <Image Source="{Binding Cover}" Stretch="UniformToFill"
+                             IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    </Panel>
+                  </DockPanel>
+                </Border>
+              </Border>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+
+    <ListBox ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGame}"
+             IsVisible="{Binding !GridView}" Margin="8" Padding="4"
+             PointerReleased="List_PointerReleased">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:LibraryItemViewModel">
+          <Border Classes="glass-chip" Padding="10,8" Margin="0,2">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+              <Border Width="56" Height="84" CornerRadius="8" ClipToBounds="True" Classes="cover-fallback">
+                <Image Source="{Binding Cover}" Stretch="UniformToFill"
+                       IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
+              </Border>
+              <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding Subtitle}" Classes="muted" FontSize="12" />
+              </StackPanel>
+              <TextBlock Grid.Column="2" Text="{Binding PlaytimeLabel}" Classes="muted" Margin="12,0"
+                         VerticalAlignment="Center" />
+              <Border Grid.Column="3" Background="{DynamicResource AccentBrush}" CornerRadius="6" Padding="8,4"
+                      IsVisible="{Binding IsInstalled}" VerticalAlignment="Center" Opacity="0.9">
+                <TextBlock Text="Installed" FontSize="11" Foreground="White" />
+              </Border>
+            </Grid>
+          </Border>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+  </DockPanel>
+</UserControl>

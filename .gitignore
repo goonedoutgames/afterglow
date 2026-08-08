@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+publish/
+src/Afterglow/sidecar/avn-hub.exe
+src/Afterglow/sidecar/avn-hub
+**/AppData/
+.DS_Store

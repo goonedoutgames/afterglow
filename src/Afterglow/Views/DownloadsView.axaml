@@ -1,0 +1,91 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Afterglow.ViewModels"
+             x:Class="Afterglow.Views.DownloadsView"
+             x:DataType="vm:DownloadsViewModel">
+  <DockPanel Margin="12">
+    <Border DockPanel.Dock="Top" Classes="glass" Padding="14,12" Margin="0,0,0,14" CornerRadius="16">
+      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+        <TextBlock Classes="help" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0"
+                   Text="Library downloads. Hosters that need a captcha or timer open Afterglow Browser briefly, then transfer continues here." />
+        <Button Grid.Column="1" Classes="ghost" Content="Clear finished" Command="{Binding ClearFinishedCommand}"
+                IsEnabled="{Binding HasFinished}" />
+        <Button Grid.Column="2" Classes="ghost" Content="Refresh" Command="{Binding RefreshCommand}" />
+      </Grid>
+    </Border>
+
+    <ScrollViewer Padding="2,4,2,12">
+      <StackPanel Spacing="16">
+        <StackPanel Spacing="8" IsVisible="{Binding HasActive}">
+          <TextBlock Text="In progress" FontWeight="SemiBold" FontSize="15" />
+          <ItemsControl ItemsSource="{Binding ActiveJobs}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:DownloadItemViewModel">
+                <Border Classes="glass" Padding="0" Margin="0,0,0,8" CornerRadius="14">
+                  <Border ClipToBounds="True" CornerRadius="14">
+                    <Grid ColumnDefinitions="96,*,Auto" ColumnSpacing="0">
+                      <Border Width="96" Height="96" Background="#22000000" ClipToBounds="True">
+                        <Panel>
+                          <Border Classes="cover-fallback" IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNull}}" />
+                          <Image Source="{Binding Cover}" Stretch="UniformToFill"
+                                 IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                        </Panel>
+                      </Border>
+                      <Grid Grid.Column="1" RowDefinitions="Auto,Auto,Auto,Auto" Margin="14,12,12,12" RowSpacing="4">
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Grid.Row="1" Classes="caption" Text="{Binding Subtitle}" />
+                        <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="12" Margin="0,4,0,0">
+                          <TextBlock Classes="muted" FontSize="12" Text="{Binding StatusText}" />
+                          <TextBlock Grid.Column="1" Classes="muted" FontSize="12" Text="{Binding ProgressText}" />
+                        </Grid>
+                        <ProgressBar Grid.Row="3" Height="5" Minimum="0" Maximum="1" Value="{Binding Progress}" Margin="0,6,0,0" />
+                      </Grid>
+                      <Button Grid.Column="2" Classes="ghost" Content="✕" Padding="8,4" Margin="0,8,8,0" VerticalAlignment="Top"
+                              Command="{Binding $parent[UserControl].((vm:DownloadsViewModel)DataContext).RemoveCommand}"
+                              CommandParameter="{Binding}" ToolTip.Tip="Remove from list" />
+                    </Grid>
+                  </Border>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <StackPanel Spacing="8" IsVisible="{Binding HasFinished}">
+          <TextBlock Text="Completed &amp; failed" FontWeight="SemiBold" FontSize="15" />
+          <ItemsControl ItemsSource="{Binding FinishedJobs}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:DownloadItemViewModel">
+                <Border Classes="glass" Padding="0" Margin="0,0,0,8" CornerRadius="14">
+                  <Border ClipToBounds="True" CornerRadius="14">
+                    <Grid ColumnDefinitions="96,*,Auto" ColumnSpacing="0">
+                      <Border Width="96" Height="96" Background="#22000000" ClipToBounds="True">
+                        <Panel>
+                          <Border Classes="cover-fallback" IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNull}}" />
+                          <Image Source="{Binding Cover}" Stretch="UniformToFill"
+                                 IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                        </Panel>
+                      </Border>
+                      <StackPanel Grid.Column="1" Spacing="4" Margin="14,12,12,12" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Classes="caption" Text="{Binding Subtitle}" />
+                        <TextBlock Classes="muted" FontSize="12" Text="{Binding StatusText}" />
+                        <TextBlock Text="{Binding Error}" Foreground="#FF8A94" FontSize="12" TextWrapping="Wrap"
+                                   IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                      </StackPanel>
+                      <Button Grid.Column="2" Classes="ghost" Content="Clear" VerticalAlignment="Top" Margin="0,8,8,0"
+                              Command="{Binding $parent[UserControl].((vm:DownloadsViewModel)DataContext).RemoveCommand}"
+                              CommandParameter="{Binding}" />
+                    </Grid>
+                  </Border>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <TextBlock Classes="muted" Text="No downloads yet." IsVisible="{Binding IsEmpty}" Margin="0,24,0,0" HorizontalAlignment="Center" />
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

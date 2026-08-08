@@ -1,0 +1,22 @@
+---
+description: Use AVN Hub OpenAPI when calling or modeling Hub endpoints
+alwaysApply: true
+---
+
+# Hub API (Afterglow)
+
+The Hub REST contract lives in the sibling repo:
+
+`../avn-hub/openapi/openapi.yaml`
+
+(or `C:/Users/Watak/Documents/GitHub/avn-hub/openapi/openapi.yaml` if needed).
+
+Before adding Hub client methods or changing request/response models in `Afterglow.HubClient` / `Afterglow.Core.Models`, read that OpenAPI file.
+
+Screenshot galleries: prefer `cached_url`; uncached items still appear via `full_url`. Refresh may take up to ~120s while the hub caches images/GIFs.
+
+Notable game tracking fields (`PATCH /api/v1/games/{id}`):
+
+- `play_status`: `unplayed` | `playing` | `completed` | `dropped`
+- `user_rating`: omit unchanged; JSON `null` clears; number sets (half-stars 0.5–5)
+- `user_notes`: string

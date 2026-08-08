@@ -1,0 +1,29 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Afterglow.ViewModels"
+             x:Class="Afterglow.Views.LibrarySetupView"
+             x:DataType="vm:LibrarySetupViewModel">
+  <ScrollViewer>
+    <StackPanel Spacing="16" MaxWidth="640" Margin="28" HorizontalAlignment="Center">
+      <TextBlock Text="Choose your library folder" Classes="title" HorizontalAlignment="Center" />
+      <TextBlock Classes="help" TextAlignment="Center" HorizontalAlignment="Center" MaxWidth="520"
+                 Text="Like Steam’s library folder — Afterglow installs games and extracts downloads here. Paths stay on this PC and are never uploaded to the hub." />
+
+      <Border Classes="glass">
+        <StackPanel Spacing="10">
+          <TextBlock Classes="field-label" Text="Library folder" />
+          <TextBlock Classes="help" Text="Pick a drive with enough space. You can change this later in Settings." />
+          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <TextBox Text="{Binding LibraryRoot}" />
+            <Button Grid.Column="1" Classes="ghost" Content="Browse…" Click="Browse_Click" />
+            <Button Grid.Column="2" Classes="ghost" Content="Use default" Command="{Binding UseDefaultCommand}" />
+          </Grid>
+          <Button Classes="accent" Content="Continue" HorizontalAlignment="Stretch"
+                  Command="{Binding ContinueCommand}" IsEnabled="{Binding !Busy}" />
+        </StackPanel>
+      </Border>
+
+      <TextBlock Text="{Binding Error}" Foreground="#E35D6A" TextWrapping="Wrap" HorizontalAlignment="Center" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

@@ -1,0 +1,395 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Afterglow.ViewModels"
+             xmlns:m="using:Afterglow.Core.Models"
+             xmlns:ctrl="using:Afterglow.Controls"
+             x:Class="Afterglow.Views.GameDetailView"
+             x:DataType="vm:GameDetailViewModel"
+             KeyDown="Gallery_KeyDown"
+             Focusable="True">
+  <UserControl.Styles>
+    <Style Selector="Border.shot-thumb">
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="2" />
+    </Style>
+    <Style Selector="Border.shot-thumb.is-selected">
+      <Setter Property="BorderBrush" Value="#F53D9CF0" />
+    </Style>
+  </UserControl.Styles>
+  <Panel>
+  <ScrollViewer>
+    <StackPanel Spacing="16" Margin="8">
+      <Button Classes="ghost" Content="← Back to library" Command="{Binding BackCommand}" HorizontalAlignment="Left" />
+
+      <Grid ColumnDefinitions="220,*" ColumnSpacing="20">
+        <Border Width="220" Height="320" CornerRadius="12" ClipToBounds="True" Classes="cover-fallback"
+                VerticalAlignment="Top">
+          <Image Source="{Binding Cover}" Stretch="UniformToFill"
+                 IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        </Border>
+        <StackPanel Grid.Column="1" Spacing="10">
+          <TextBlock Text="{Binding Title}" Classes="title" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding Meta}" Classes="muted" />
+          <Border Classes="status-badge" HorizontalAlignment="Left"
+                  Background="{Binding PlayStatusBadgeBrush}" BorderBrush="{Binding PlayStatusBadgeBorder}">
+            <TextBlock Text="{Binding PlayStatusBadgeLabel}" FontSize="12" FontWeight="SemiBold" Foreground="White" />
+          </Border>
+
+          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <TextBlock Text="F95" Classes="star-label" VerticalAlignment="Center" />
+            <ItemsControl ItemsSource="{Binding F95Stars}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" Spacing="2" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:StarSlotViewModel">
+                  <Panel Width="28" Height="28">
+                    <TextBlock Text="★" FontSize="24" Width="28" Height="28"
+                               Foreground="#55FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top"
+                               TextAlignment="Center" />
+                    <Border Width="{Binding FillWidth}" Height="28" HorizontalAlignment="Left" ClipToBounds="True">
+                      <TextBlock Text="★" FontSize="24" Width="28" Height="28"
+                                 Foreground="#F5C542" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                 TextAlignment="Center" />
+                    </Border>
+                  </Panel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Text="{Binding F95RatingText}" Classes="caption" VerticalAlignment="Center" MinWidth="28" />
+          </StackPanel>
+
+          <TextBlock Text="{Binding Description}" TextWrapping="Wrap" MaxHeight="180" TextTrimming="WordEllipsis" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Classes="accent" Content="Play" Command="{Binding PlayCommand}" IsEnabled="{Binding IsInstalled}" />
+            <Button Classes="ghost" Content="Refresh metadata" Command="{Binding RefreshCommand}" />
+            <Button Classes="ghost" Content="Check version" Command="{Binding CheckVersionCommand}" />
+            <Button Classes="ghost" Content="Open F95 thread" Command="{Binding OpenF95Command}"
+                    IsVisible="{Binding F95Url, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <Button Classes="ghost" Content="Uninstall" Command="{Binding UninstallLocalCommand}" IsEnabled="{Binding IsInstalled}" />
+            <Button Classes="ghost" Content="Remove from library" Command="{Binding DeleteFromLibraryCommand}" />
+          </StackPanel>
+
+          <Border Classes="glass" Padding="12" Margin="0,8,0,0">
+            <StackPanel Spacing="10">
+              <StackPanel Spacing="4">
+                <TextBlock Text="Your tracking" FontWeight="SemiBold" />
+                <TextBlock Classes="caption" Text="Status, your rating, and notes for this game." />
+              </StackPanel>
+
+              <StackPanel Spacing="6">
+                <TextBlock Classes="field-label" Text="Your rating" />
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                  <ItemsControl ItemsSource="{Binding YourStars}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" Spacing="2" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:StarSlotViewModel">
+                        <Panel Width="28" Height="28">
+                          <TextBlock Text="★" FontSize="24" Width="28" Height="28"
+                                     Foreground="#55FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                     TextAlignment="Center" IsHitTestVisible="False" />
+                          <Border Width="{Binding FillWidth}" Height="28" HorizontalAlignment="Left" ClipToBounds="True"
+                                  IsHitTestVisible="False">
+                            <TextBlock Text="★" FontSize="24" Width="28" Height="28"
+                                       Foreground="#F5C542" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                       TextAlignment="Center" />
+                          </Border>
+                          <Grid ColumnDefinitions="*,*">
+                            <Button Classes="star-hit" Grid.Column="0"
+                                    Command="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).SetUserRatingCommand}"
+                                    CommandParameter="{Binding HalfParam}"
+                                    IsEnabled="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).Busy, Converter={x:Static BoolConverters.Not}}"
+                                    Tag="{Binding HalfParam}"
+                                    PointerEntered="StarHit_PointerEntered"
+                                    PointerExited="StarHit_PointerExited" />
+                            <Button Classes="star-hit" Grid.Column="1"
+                                    Command="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).SetUserRatingCommand}"
+                                    CommandParameter="{Binding FullParam}"
+                                    IsEnabled="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).Busy, Converter={x:Static BoolConverters.Not}}"
+                                    Tag="{Binding FullParam}"
+                                    PointerEntered="StarHit_PointerEntered"
+                                    PointerExited="StarHit_PointerExited" />
+                          </Grid>
+                        </Panel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <TextBlock Text="{Binding UserRatingText}" Classes="caption" VerticalAlignment="Center" MinWidth="28" />
+                </StackPanel>
+              </StackPanel>
+
+              <StackPanel Spacing="6">
+                <TextBlock Classes="field-label" Text="Play status" />
+                <ItemsControl ItemsSource="{Binding StatusPills}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <WrapPanel />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:PlayStatusPillViewModel">
+                      <Button Classes="status-pill" Margin="0,0,8,8"
+                              Content="{Binding Label}"
+                              Classes.is-active="{Binding IsActive}"
+                              Background="{Binding PillBrush}"
+                              BorderBrush="{Binding PillBorder}"
+                              Foreground="{Binding PillForeground}"
+                              Command="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).SetPlayStatusCommand}"
+                              CommandParameter="{Binding Value}"
+                              IsEnabled="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).Busy, Converter={x:Static BoolConverters.Not}}" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+
+              <TextBlock Classes="field-label" Text="Notes" />
+              <TextBox Text="{Binding UserNotes}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72" IsEnabled="{Binding !Busy}" />
+              <Button Classes="accent" Content="Save notes" Command="{Binding SaveNotesCommand}" HorizontalAlignment="Left" IsEnabled="{Binding !Busy}" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </Grid>
+
+      <Border Classes="glass" IsVisible="{Binding HasScreenshots}">
+        <StackPanel Spacing="10">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Text="Screenshots" FontWeight="SemiBold" />
+              <TextBlock Classes="caption" Text="{Binding Screenshots.Count, StringFormat={}{0} images · click to open gallery · scroll strip · GIFs animate}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <Button Classes="ghost" Content="Reset cover" Command="{Binding ResetCoverCommand}"
+                      IsVisible="{Binding IsCustomCover}" IsEnabled="{Binding !Busy}" />
+              <Button Classes="accent" Content="Open gallery" Command="{Binding OpenGalleryCommand}" IsEnabled="{Binding !Busy}" />
+            </StackPanel>
+          </Grid>
+          <Border Cursor="Hand" Background="Transparent" PointerPressed="Preview_PointerPressed"
+                  CornerRadius="10" ClipToBounds="True" MaxHeight="380">
+            <ctrl:AnimatedImageView Media="{Binding SelectedAnimation}"
+                                    FallbackSource="{Binding SelectedScreenshot}"
+                                    Stretch="Uniform" MaxHeight="360" />
+          </Border>
+          <ScrollViewer Name="ThumbStrip"
+                        HorizontalScrollBarVisibility="Auto"
+                        VerticalScrollBarVisibility="Disabled"
+                        PointerWheelChanged="ThumbStrip_PointerWheelChanged">
+            <ItemsControl ItemsSource="{Binding Screenshots}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" Spacing="8" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ScreenshotThumbViewModel">
+                  <Border Width="140" Height="90" CornerRadius="8" ClipToBounds="True"
+                          Classes="cover-fallback shot-thumb"
+                          Classes.is-selected="{Binding IsSelected}"
+                          Cursor="Hand" PointerPressed="Screenshot_PointerPressed" Tag="{Binding}">
+                    <Panel>
+                      <Image Source="{Binding Image}" Stretch="UniformToFill"
+                             IsVisible="{Binding Image, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                      <Border Background="#66000000" IsVisible="{Binding IsSelected}" />
+                      <Border Background="#AA1A1A1A" CornerRadius="4" Padding="4,1"
+                              HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="4"
+                              IsVisible="{Binding IsAnimated}">
+                        <TextBlock Text="GIF" FontSize="10" FontWeight="SemiBold" Foreground="White" />
+                      </Border>
+                    </Panel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="glass" IsVisible="{Binding !HasScreenshots}">
+        <StackPanel Spacing="6" Margin="4">
+          <TextBlock Text="Screenshots" FontWeight="SemiBold" />
+          <TextBlock Classes="caption" Text="{Binding GalleryHint}" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="glass">
+        <StackPanel Spacing="8">
+          <Button Classes="ghost" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                  Padding="0" Command="{Binding ToggleDownloadsCommand}">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+              <StackPanel Spacing="2">
+                <TextBlock Text="Download links" FontWeight="SemiBold" />
+                <TextBlock Classes="caption" IsVisible="{Binding !DownloadsExpanded}"
+                           Text="{Binding DownloadsCollapsedHint}" />
+              </StackPanel>
+              <TextBlock Grid.Column="1" VerticalAlignment="Center" Classes="caption"
+                         Text="{Binding DownloadsChevron}" />
+            </Grid>
+          </Button>
+          <StackPanel Spacing="8" IsVisible="{Binding DownloadsExpanded}">
+            <TextBlock Classes="help"
+                       Text="Links from the F95 thread. Afterglow Browser opens when a host needs a captcha/timer/interstitial (F95 session cookies are loaded automatically when available)." />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="Platform" VerticalAlignment="Center" Classes="caption" />
+              <ComboBox Width="140" ItemsSource="{Binding PlatformFilters}" SelectedItem="{Binding PlatformFilter}" />
+            </StackPanel>
+            <ItemsControl ItemsSource="{Binding Links}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:DownloadLinkItemViewModel">
+                  <Border Classes="glass" Padding="10,8" Margin="0,0,0,8">
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                      <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <Border Width="28" Height="28" CornerRadius="6" Background="#33FFFFFF"
+                                VerticalAlignment="Center">
+                          <Panel>
+                            <TextBlock Text="{Binding HostInitial}" FontSize="11" FontWeight="SemiBold"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       IsVisible="{Binding HostIcon, Converter={x:Static ObjectConverters.IsNull}}" />
+                            <Image Source="{Binding HostIcon}" Stretch="Uniform" Margin="4"
+                                   IsVisible="{Binding HostIcon, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                          </Panel>
+                        </Border>
+                        <Border Background="{DynamicResource AccentBrush}" CornerRadius="6" Padding="8,3" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding HostLabel}" FontSize="11" Foreground="White" />
+                        </Border>
+                        <Border Background="{Binding PlatformBrush}" CornerRadius="6" Padding="8,3" VerticalAlignment="Center"
+                                IsVisible="{Binding Platform, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                          <StackPanel Orientation="Horizontal" Spacing="5">
+                            <Path Data="{Binding PlatformPath}" Width="12" Height="12" Stretch="Uniform"
+                                  Fill="White" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding PlatformLabel}" FontSize="11" Foreground="White" />
+                          </StackPanel>
+                        </Border>
+                      </StackPanel>
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding Url}" Classes="caption" TextTrimming="CharacterEllipsis" Opacity="0.55" MaxHeight="18" />
+                      </StackPanel>
+                      <Button Grid.Column="2" Classes="accent" MinWidth="96" Content="{Binding ActionLabel}"
+                              VerticalAlignment="Center"
+                              Command="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).DownloadLinkCommand}"
+                              CommandParameter="{Binding}" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Text="{Binding MediaStatus}" Classes="caption" TextWrapping="Wrap" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="glass">
+        <StackPanel Spacing="10">
+          <TextBlock Text="Install on this PC" FontWeight="SemiBold" />
+          <TextBlock Classes="help"
+                     Text="Link an already-extracted game folder, or pick a .zip/.7z/.rar archive to extract into your library. Host downloads use Afterglow Browser when a captcha/timer is required." />
+
+          <TextBlock Classes="field-label" Text="Install folder (link existing)" />
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox PlaceholderText="Folder that already contains the game" Text="{Binding InstallPath}" />
+            <Button Grid.Column="1" Classes="ghost" Content="Browse folder…" Click="BrowseFolder_Click" />
+          </Grid>
+          <Button Classes="accent" Content="Link folder" Command="{Binding LinkFolderCommand}" HorizontalAlignment="Left" />
+
+          <TextBlock Classes="field-label" Text="Archive file (extract into library)" Margin="0,8,0,0" />
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox PlaceholderText="Path to .zip / .7z / .rar" Text="{Binding ArchivePath}" />
+            <Button Grid.Column="1" Classes="ghost" Content="Browse archive…" Click="BrowseArchive_Click" />
+          </Grid>
+          <Button Classes="ghost" Content="Install archive" Command="{Binding InstallArchiveCommand}" HorizontalAlignment="Left" />
+
+          <TextBlock Text="{Binding InstallPath, StringFormat=Installed: {0}}" Classes="muted" IsVisible="{Binding IsInstalled}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="glass">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Cloud saves" FontWeight="SemiBold" />
+          <ItemsControl ItemsSource="{Binding Saves}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="m:GameSave">
+                <TextBlock Margin="0,2" Classes="muted">
+                  <TextBlock.Text>
+                    <MultiBinding StringFormat="{}{0} · {1}">
+                      <Binding Path="Filename" />
+                      <Binding Path="UploadedAt" />
+                    </MultiBinding>
+                  </TextBlock.Text>
+                </TextBlock>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
+      <TextBlock Text="{Binding Status}" Classes="muted" />
+      <TextBlock Text="{Binding Error}" Foreground="#E35D6A" TextWrapping="Wrap" />
+    </StackPanel>
+  </ScrollViewer>
+
+  <!-- Fullscreen gallery lightbox -->
+  <Panel IsVisible="{Binding IsGalleryOpen}" ZIndex="100">
+    <Border Background="#E6080A0E" IsHitTestVisible="False" />
+    <Grid RowDefinitions="Auto,*,Auto" Margin="16" Background="Transparent"
+          PointerPressed="LightboxBackdrop_PointerPressed">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" Margin="0,0,0,12"
+            Background="#01000000">
+        <TextBlock Text="{Binding GalleryCaption}" FontWeight="SemiBold" FontSize="16"
+                   VerticalAlignment="Center" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+          <Button Classes="accent" Content="Use as cover"
+                  Command="{Binding SetCoverFromGalleryCommand}"
+                  IsEnabled="{Binding CanSetGalleryCover}"
+                  ToolTip.Tip="Requires a hub-cached screenshot" />
+          <Button Classes="ghost" Content="✕" MinWidth="40"
+                  Command="{Binding CloseGalleryCommand}" />
+        </StackPanel>
+      </Grid>
+
+      <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+        <Button Classes="ghost" Content="‹" FontSize="36" MinWidth="48" VerticalAlignment="Center"
+                Command="{Binding GalleryPrevCommand}" />
+        <Border Grid.Column="1" Background="#01000000" ClipToBounds="True">
+          <ctrl:AnimatedImageView Media="{Binding GalleryAnimation}"
+                                  FallbackSource="{Binding GalleryImage}"
+                                  Stretch="Uniform"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+        <Button Grid.Column="2" Classes="ghost" Content="›" FontSize="36" MinWidth="48"
+                VerticalAlignment="Center" Command="{Binding GalleryNextCommand}" />
+      </Grid>
+
+      <Border Grid.Row="2" Background="#01000000" Margin="0,12,0,0" Padding="0,4">
+        <ScrollViewer Name="LightboxStrip"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Disabled"
+                      PointerWheelChanged="ThumbStrip_PointerWheelChanged">
+          <ItemsControl ItemsSource="{Binding Screenshots}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ScreenshotThumbViewModel">
+                <Border Width="96" Height="64" CornerRadius="6" ClipToBounds="True"
+                        Classes="cover-fallback shot-thumb"
+                        Classes.is-selected="{Binding IsSelected}"
+                        Cursor="Hand" PointerPressed="Screenshot_PointerPressed" Tag="{Binding}">
+                  <Image Source="{Binding Image}" Stretch="UniformToFill"
+                         IsVisible="{Binding Image, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+  </Panel>
+  </Panel>
+</UserControl>
