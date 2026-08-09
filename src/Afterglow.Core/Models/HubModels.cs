@@ -183,6 +183,10 @@ public sealed class AddGameRequest
 {
     [JsonPropertyName("input")]
     public string Input { get; set; } = "";
+
+    /// Catalog title — helps SAM when numeric id search returns nothing.
+    [JsonPropertyName("title_hint")]
+    public string? TitleHint { get; set; }
 }
 
 public sealed class UpdateSettingsRequest

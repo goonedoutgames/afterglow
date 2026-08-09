@@ -1711,7 +1711,9 @@ public partial class BrowseViewModel : ViewModelBase
 
         try
         {
-            var detail = await _app.Hub.CatalogPreviewAsync(item.Result.ThreadId.ToString());
+            var detail = await _app.Hub.CatalogPreviewAsync(
+                item.Result.ThreadId.ToString(),
+                item.Result.Title);
             if (_previewThreadId != detail.ThreadId) return;
             _previewResult = detail;
             PreviewTitle = detail.Title;
@@ -1868,7 +1870,13 @@ public partial class BrowseViewModel : ViewModelBase
 
         try
         {
-            var detail = await _app.Hub.AddGameAsync(input);
+            // Browse cards already know the title; SAM often misses numeric-id search alone.
+            var titleHint = !string.Equals(displayTitle, input, StringComparison.OrdinalIgnoreCase)
+                            && displayTitle.Trim().Length >= 3
+                            && !displayTitle.Contains("f95zone.to", StringComparison.OrdinalIgnoreCase)
+                ? displayTitle
+                : null;
+            var detail = await _app.Hub.AddGameAsync(input, titleHint);
             var resolvedTid = detail.Game.F95ThreadId ?? threadIdHint;
             if (resolvedTid is long addedTid)
             {

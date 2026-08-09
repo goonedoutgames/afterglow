@@ -14,17 +14,22 @@
       <Border Classes="glass">
         <StackPanel Spacing="10">
           <TextBlock Text="F95Zone" FontWeight="SemiBold" />
-          <TextBlock Classes="help"
-                     Text="Required for Browse, refresh, download links, and media on both Remote and Local hubs. Same as the web Settings page." />
+          <TextBlock Classes="help" TextWrapping="Wrap"
+                     Text="Needed for Browse, add/refresh, download links, and media. Use either username/password OR cookies — not both. Prefer cookies if login hits 2FA or CAPTCHA." />
           <TextBlock Text="{Binding F95Status}" TextWrapping="Wrap" />
+          <TextBlock Classes="field-label" Text="Option A — username / password" Margin="0,4,0,0" />
+          <TextBlock Classes="help" TextWrapping="Wrap"
+                     Text="Logs the hub into f95zone.to and stores the session. Fails when F95 requires 2FA or CAPTCHA." />
           <TextBlock Classes="field-label" Text="Username or email" />
           <TextBox Text="{Binding F95Username}" IsEnabled="{Binding !Busy}" />
           <TextBlock Classes="field-label" Text="Password" />
           <TextBox Text="{Binding F95Password}" PasswordChar="•" IsEnabled="{Binding !Busy}" />
           <Button Classes="accent" Content="Login to F95Zone" Command="{Binding F95LoginCommand}" HorizontalAlignment="Left" IsEnabled="{Binding !Busy}" />
-          <TextBlock Classes="field-label" Text="Or paste cookies" Margin="0,8,0,0" />
+          <TextBlock Classes="field-label" Text="Option B — paste browser cookies" Margin="0,12,0,0" />
+          <TextBlock Classes="help" TextWrapping="Wrap"
+                     Text="1) Log in at f95zone.to in your browser. 2) DevTools → Application (Chrome) or Storage (Firefox) → Cookies → https://f95zone.to. 3) Copy xf_user and xf_session (xf_csrf helps). Paste as a Cookie header: xf_user=…; xf_session=…; xf_csrf=…" />
           <TextBox Text="{Binding F95Cookies}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72" IsEnabled="{Binding !Busy}"
-                   PlaceholderText="xf_user / xf_session…" />
+                   PlaceholderText="xf_user=…; xf_session=…; xf_csrf=…" />
           <Button Classes="ghost" Content="Save cookies" Command="{Binding F95CookiesCommand}" HorizontalAlignment="Left" IsEnabled="{Binding !Busy}" />
         </StackPanel>
       </Border>

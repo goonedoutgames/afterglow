@@ -88,8 +88,32 @@ public sealed class HubApiClient : IDisposable
     public Task<GameDetail> GetGameAsync(long gameId, CancellationToken cancellationToken = default) =>
         SendAsync<object, GameDetail>(HttpMethod.Get, $"api/v1/games/{gameId}", null, cancellationToken);
 
-    public Task<GameDetail> AddGameAsync(string input, CancellationToken cancellationToken = default) =>
-        SendAsync<AddGameRequest, GameDetail>(HttpMethod.Post, "api/v1/library/add", new AddGameRequest { Input = input }, cancellationToken);
+    public Task<GameDetail> AddGameAsync(
+        string input,
+        string? titleHint = null,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<AddGameRequest, GameDetail>(
+            HttpMethod.Post,
+            "api/v1/library/add",
+            new AddGameRequest
+            {
+                Input = input,
+                TitleHint = string.IsNullOrWhiteSpace(titleHint) ? null : titleHint.Trim(),
+            },
+            cancellationToken);
+
+    public Task<F95SearchResult> CatalogPreviewAsync(
+        string input,
+        string? titleHint = null,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<object, F95SearchResult>(
+            HttpMethod.Get,
+            WithQuery(
+                "api/v1/catalog/preview",
+                ("input", input),
+                ("title_hint", string.IsNullOrWhiteSpace(titleHint) ? null : titleHint.Trim())),
+            null,
+            cancellationToken);
 
     public Task<GameDetail> RefreshGameAsync(long gameId, CancellationToken cancellationToken = default) =>
         SendAsync<object, GameDetail>(HttpMethod.Post, $"api/v1/games/{gameId}/refresh", null, cancellationToken);
@@ -151,10 +175,6 @@ public sealed class HubApiClient : IDisposable
             ("notags", notags),
             ("tag_mode", tagMode),
             ("prefixes", prefixes)), null, cancellationToken);
-
-    public Task<F95SearchResult> CatalogPreviewAsync(string input, CancellationToken cancellationToken = default) =>
-        SendAsync<object, F95SearchResult>(HttpMethod.Get,
-            WithQuery("api/v1/catalog/preview", ("input", input)), null, cancellationToken);
 
     public Uri ResolveUri(string url)
     {

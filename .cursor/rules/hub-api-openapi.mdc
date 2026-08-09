@@ -27,3 +27,5 @@ Download links (`GET /api/v1/games/{id}/download-links`):
 
 - `label` — platform (Windows, Linux, PC, …)
 - `title` — pack/section heading above a hoster cluster (Episode 5, v0.4 Full, …) when the thread uses one
+
+`POST /api/v1/library/add` accepts optional `title_hint` (Browse should send the card title). Full F95 URLs also yield a slug-derived SAM hint; numeric-id search alone often misses.
