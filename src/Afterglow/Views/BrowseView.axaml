@@ -1,57 +1,111 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Afterglow.ViewModels"
+             xmlns:core="using:Afterglow.Core.Models"
              xmlns:ctrl="using:Afterglow.Controls"
              x:Class="Afterglow.Views.BrowseView"
              x:DataType="vm:BrowseViewModel">
-  <DockPanel Margin="4">
-    <Border DockPanel.Dock="Top" Classes="glass" Padding="14,12" Margin="4,4,4,8" CornerRadius="16">
-      <StackPanel Spacing="10">
-        <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
-          <TextBox PlaceholderText="Search title…" Text="{Binding Query}" MinWidth="160" />
-          <ComboBox Grid.Column="1" Width="120" ItemsSource="{Binding SortOptions}" SelectedItem="{Binding Sort}" />
-          <ComboBox Grid.Column="2" Width="120" ItemsSource="{Binding DateOptions}" SelectedItem="{Binding DatePreset}" />
-          <ComboBox Grid.Column="3" Width="120" ItemsSource="{Binding Engines}" SelectedItem="{Binding Engine}" />
-          <Button Grid.Column="4" Classes="accent" Content="Search" Command="{Binding SearchCommand}" IsEnabled="{Binding !Busy}" />
-        </Grid>
+  <DockPanel>
+    <!-- Right sidebar: search / sort / filters / tags -->
+    <Border DockPanel.Dock="Right" Classes="glass" Width="300" Margin="4,8,8,8" Padding="12,14,8,14" CornerRadius="16"
+            ClipToBounds="True">
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                    VerticalScrollBarVisibility="Auto"
+                    Padding="2,0,10,0">
+        <StackPanel Spacing="14" Margin="2,0,4,0">
+          <TextBlock Text="Browse" Classes="field-label" Margin="0" FontSize="15" />
 
-        <StackPanel Spacing="6">
-          <TextBlock Text="Tags" Classes="field-label" Margin="0" />
-          <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
-            <TextBox PlaceholderText="Add include tag…" Text="{Binding TagDraft}" />
-            <Button Grid.Column="1" Classes="ghost" Content="Add tag" Command="{Binding AddIncludeTagCommand}" />
-            <ComboBox Grid.Column="2" Width="150" ItemsSource="{Binding TagModeOptions}"
+          <StackPanel Spacing="6">
+            <TextBox PlaceholderText="Search title…" Text="{Binding Query}" MinHeight="36" />
+            <Button Classes="accent" Content="Search" Command="{Binding SearchCommand}"
+                    IsEnabled="{Binding !Busy}" HorizontalAlignment="Stretch" />
+          </StackPanel>
+
+          <StackPanel Spacing="6">
+            <TextBlock Text="Sort" Classes="field-label" Margin="0" />
+            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding SortChoices}"
+                      SelectedItem="{Binding SortBy}" DisplayMemberBinding="{Binding Label}" />
+            <TextBlock Text="Updated" Classes="caption" Margin="0,4,0,0" />
+            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding DateChoices}"
+                      SelectedItem="{Binding DatePreset}" DisplayMemberBinding="{Binding Label}" />
+            <TextBlock Text="Engine" Classes="caption" Margin="0,4,0,0" />
+            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding EngineChoices}"
+                      SelectedItem="{Binding Engine}" DisplayMemberBinding="{Binding Label}" />
+          </StackPanel>
+
+          <StackPanel Spacing="6">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="Tags" Classes="field-label" Margin="0" VerticalAlignment="Center" />
+              <Button Grid.Column="1" Classes="ghost" Content="Clear" Padding="8,4" MinHeight="28"
+                      Command="{Binding ClearIncludeTagsCommand}" IsVisible="{Binding HasIncludeTags}" />
+            </Grid>
+            <TextBlock Classes="caption" TextWrapping="Wrap"
+                       Text="F95 catalog tags (numeric IDs under the hood). Works with sort and date." />
+            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding TagModeOptions}"
                       SelectedItem="{Binding TagMode}" DisplayMemberBinding="{Binding Label}" />
-            <Button Grid.Column="3" Classes="ghost" Content="Clear tags" Command="{Binding ClearIncludeTagsCommand}"
-                    IsVisible="{Binding HasIncludeTags}" />
-          </Grid>
-          <ItemsControl ItemsSource="{Binding IncludeTags}">
-            <ItemsControl.ItemsPanel>
-              <ItemsPanelTemplate>
-                <WrapPanel />
-              </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="x:String">
-                <Border Classes="tag-filter-chip is-selected"
-                        PointerPressed="IncludeTag_PointerPressed" Tag="{Binding}">
-                  <TextBlock Text="{Binding}" />
-                </Border>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-        </StackPanel>
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <TextBox PlaceholderText="Filter / add tag…" Text="{Binding TagDraft}" MinHeight="36" />
+              <Button Grid.Column="1" Classes="ghost" Content="Add" Command="{Binding AddIncludeTagCommand}" />
+            </Grid>
+            <ItemsControl ItemsSource="{Binding IncludeTags}" IsVisible="{Binding HasIncludeTags}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                  <Border Classes="tag-filter-chip is-selected"
+                          PointerPressed="IncludeTag_PointerPressed" Tag="{Binding}">
+                    <TextBlock Text="{Binding}" />
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Border Classes="glass-chip" Padding="8,8" MaxHeight="220">
+              <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="F95 tags" Classes="caption" />
+                  <ItemsControl ItemsSource="{Binding CatalogTagSuggestions}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <WrapPanel />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="core:CatalogTag">
+                        <Border Classes="tag-filter-chip"
+                                PointerPressed="CatalogTag_PointerPressed" Tag="{Binding}">
+                          <TextBlock Text="{Binding Name}" />
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <TextBlock Classes="caption" Text="No matching tags."
+                             IsVisible="{Binding !CatalogTagSuggestions.Count}" />
+                </StackPanel>
+              </ScrollViewer>
+            </Border>
+          </StackPanel>
 
-        <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
-          <TextBox PlaceholderText="Add by F95 URL or thread id…" Text="{Binding AddByUrl}" MinWidth="160" />
-          <Button Grid.Column="1" Classes="ghost" Content="Add URL" Command="{Binding AddByUrlCommand}" IsEnabled="{Binding !Busy}" />
-          <Button Grid.Column="2" Classes="ghost" Content="Prev" Command="{Binding PrevPageCommand}" />
-          <TextBlock Grid.Column="3" Text="{Binding Page, StringFormat=Page {0}}" VerticalAlignment="Center" Classes="muted" />
-          <Button Grid.Column="4" Classes="ghost" Content="Next" Command="{Binding NextPageCommand}" />
-        </Grid>
-        <TextBlock Text="{Binding Status}" Classes="muted" />
-        <TextBlock Text="{Binding Error}" Foreground="#E35D6A" TextWrapping="Wrap" />
-      </StackPanel>
+          <StackPanel Spacing="6">
+            <TextBlock Text="Add to library" Classes="field-label" Margin="0" />
+            <TextBox PlaceholderText="F95 URL or thread id…" Text="{Binding AddByUrl}" MinHeight="36" />
+            <Button Classes="ghost" Content="Add URL" Command="{Binding AddByUrlCommand}"
+                    IsEnabled="{Binding !Busy}" HorizontalAlignment="Stretch" />
+          </StackPanel>
+
+          <Grid ColumnDefinitions="*,Auto,*" ColumnSpacing="6">
+            <Button Classes="ghost" Content="Prev" Command="{Binding PrevPageCommand}" />
+            <TextBlock Grid.Column="1" Text="{Binding Page, StringFormat=Page {0}}"
+                       VerticalAlignment="Center" Classes="muted" />
+            <Button Grid.Column="2" Classes="ghost" Content="Next" Command="{Binding NextPageCommand}" />
+          </Grid>
+
+          <TextBlock Text="{Binding Status}" Classes="caption" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding Error}" Foreground="#E35D6A" TextWrapping="Wrap" />
+        </StackPanel>
+      </ScrollViewer>
     </Border>
 
     <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="6,10,6,18">

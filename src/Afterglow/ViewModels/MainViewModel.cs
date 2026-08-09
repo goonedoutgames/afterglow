@@ -336,7 +336,7 @@ public partial class MainViewModel : ViewModelBase
 
         if (action == "browse")
         {
-            Browse.ApplyIncludeTag(tag);
+            Browse.PrepareIncludeTag(tag);
             await NavigateAsync("browse");
         }
         else
@@ -946,21 +946,59 @@ public partial class BrowseViewModel : ViewModelBase
     private readonly MediaCacheService _media;
     private readonly ToastService _toasts;
     private readonly HashSet<long> _libraryThreadIds = [];
+    private readonly List<CatalogTag> _allCatalogTags = [];
     private bool _loaded;
+    private bool _catalogLoaded;
+    private bool _suppressFilterRefresh;
+    private int _searchGeneration;
 
     public BrowseViewModel(AfterglowAppService app, MediaCacheService media, ToastService toasts)
     {
         _app = app;
         _media = media;
         _toasts = toasts;
+        _suppressFilterRefresh = true;
+        SortBy = SortChoices[0];
+        DatePreset = DateChoices[0];
+        Engine = EngineChoices[0];
         TagMode = TagModeOptions[0];
+        _suppressFilterRefresh = false;
     }
 
     public ObservableCollection<CatalogItemViewModel> Results { get; } = [];
-    public ObservableCollection<string> SortOptions { get; } = ["date", "likes", "views", "name", "rating"];
-    public ObservableCollection<string> DateOptions { get; } = ["Any time", "7 days", "30 days", "90 days", "1 year"];
     public ObservableCollection<string> IncludeTags { get; } = [];
     public ObservableCollection<string> ExcludeTags { get; } = [];
+    public ObservableCollection<CatalogTag> CatalogTagSuggestions { get; } = [];
+
+    public ObservableCollection<LibraryChoice> SortChoices { get; } =
+    [
+        new("date", "Updated"),
+        new("likes", "Likes"),
+        new("views", "Views"),
+        new("name", "Name"),
+        new("rating", "Rating")
+    ];
+
+    public ObservableCollection<LibraryChoice> DateChoices { get; } =
+    [
+        new("0", "Any time"),
+        new("7", "7 days"),
+        new("30", "30 days"),
+        new("90", "90 days"),
+        new("365", "1 year")
+    ];
+
+    public ObservableCollection<LibraryChoice> EngineChoices { get; } =
+    [
+        new("", "Any engine"),
+        new("Ren'Py", "Ren'Py"),
+        new("Unity", "Unity"),
+        new("HTML", "HTML"),
+        new("RPGM", "RPGM"),
+        new("VN", "VN"),
+        new("Other", "Other")
+    ];
+
     public ObservableCollection<LibraryChoice> TagModeOptions { get; } =
     [
         new("and", "Match all (AND)"),
@@ -968,9 +1006,9 @@ public partial class BrowseViewModel : ViewModelBase
     ];
 
     [ObservableProperty] private string _query = "";
-    [ObservableProperty] private string _sort = "date";
-    [ObservableProperty] private string _datePreset = "Any time";
-    [ObservableProperty] private string _engine = "";
+    [ObservableProperty] private LibraryChoice? _sortBy;
+    [ObservableProperty] private LibraryChoice? _datePreset;
+    [ObservableProperty] private LibraryChoice? _engine;
     [ObservableProperty] private string _addByUrl = "";
     [ObservableProperty] private string _tagDraft = "";
     [ObservableProperty] private LibraryChoice? _tagMode;
@@ -980,36 +1018,69 @@ public partial class BrowseViewModel : ViewModelBase
     [ObservableProperty] private bool _busy;
     [ObservableProperty] private bool _hasIncludeTags;
 
-    public string[] Engines { get; } = ["", "Ren'Py", "Unity", "HTML", "RPGM", "VN", "Other"];
-
     public async Task EnsureLoadedAsync()
     {
+        await EnsureCatalogTagsAsync();
         if (_loaded && Results.Count > 0) return;
         await SearchAsync();
     }
 
-    public void ApplyIncludeTag(string tag)
+    /// <summary>Set include tag and force the next EnsureLoadedAsync / search to apply it.</summary>
+    public void PrepareIncludeTag(string tag)
     {
-        var clean = tag.Trim();
+        var clean = ResolveCatalogTagName(tag.Trim());
         if (string.IsNullOrEmpty(clean) || clean.All(char.IsDigit)) return;
         IncludeTags.Clear();
         ExcludeTags.Clear();
         IncludeTags.Add(clean);
         HasIncludeTags = true;
         Page = 1;
+        _loaded = false;
+        RefreshCatalogSuggestions();
+    }
+
+    public void ApplyIncludeTag(string tag)
+    {
+        PrepareIncludeTag(tag);
         _ = SearchAsync();
     }
 
     [RelayCommand]
     private void AddIncludeTag()
     {
-        var t = TagDraft.Trim();
+        TryAddIncludeTag(TagDraft);
+        TagDraft = "";
+    }
+
+    [RelayCommand]
+    private void ToggleCatalogTag(CatalogTag? tag)
+    {
+        if (tag is null || string.IsNullOrWhiteSpace(tag.Name)) return;
+        var hit = IncludeTags.FirstOrDefault(x => string.Equals(x, tag.Name, StringComparison.OrdinalIgnoreCase));
+        if (hit is not null)
+        {
+            IncludeTags.Remove(hit);
+            HasIncludeTags = IncludeTags.Count > 0;
+        }
+        else
+        {
+            TryAddIncludeTag(tag.Name);
+            return;
+        }
+        Page = 1;
+        RefreshCatalogSuggestions();
+        _ = SearchAsync();
+    }
+
+    private void TryAddIncludeTag(string? raw)
+    {
+        var t = ResolveCatalogTagName((raw ?? "").Trim());
         if (string.IsNullOrEmpty(t) || t.All(char.IsDigit) || IncludeTags.Count >= 10) return;
         if (IncludeTags.Any(x => string.Equals(x, t, StringComparison.OrdinalIgnoreCase))) return;
         IncludeTags.Add(t);
-        TagDraft = "";
         HasIncludeTags = true;
         Page = 1;
+        RefreshCatalogSuggestions();
         _ = SearchAsync();
     }
 
@@ -1021,6 +1092,7 @@ public partial class BrowseViewModel : ViewModelBase
         if (hit is not null) IncludeTags.Remove(hit);
         HasIncludeTags = IncludeTags.Count > 0;
         Page = 1;
+        RefreshCatalogSuggestions();
         _ = SearchAsync();
     }
 
@@ -1030,40 +1102,144 @@ public partial class BrowseViewModel : ViewModelBase
         IncludeTags.Clear();
         HasIncludeTags = false;
         Page = 1;
+        RefreshCatalogSuggestions();
+        _ = SearchAsync();
+    }
+
+    partial void OnTagDraftChanged(string value) => RefreshCatalogSuggestions();
+
+    partial void OnSortByChanged(LibraryChoice? value)
+    {
+        if (_suppressFilterRefresh || !_loaded || value is null) return;
+        Page = 1;
+        _ = SearchAsync();
+    }
+
+    partial void OnDatePresetChanged(LibraryChoice? value)
+    {
+        if (_suppressFilterRefresh || !_loaded || value is null) return;
+        Page = 1;
+        _ = SearchAsync();
+    }
+
+    partial void OnEngineChanged(LibraryChoice? value)
+    {
+        if (_suppressFilterRefresh || !_loaded || value is null) return;
+        Page = 1;
         _ = SearchAsync();
     }
 
     partial void OnTagModeChanged(LibraryChoice? value)
     {
-        if (!_loaded || value is null) return;
+        if (_suppressFilterRefresh || !_loaded || value is null) return;
         Page = 1;
         _ = SearchAsync();
+    }
+
+    private async Task EnsureCatalogTagsAsync()
+    {
+        if (_catalogLoaded) return;
+        try
+        {
+            var list = await _app.Hub.GetCatalogTagsAsync(limit: 400);
+            _allCatalogTags.Clear();
+            _allCatalogTags.AddRange(list.Where(t => !string.IsNullOrWhiteSpace(t.Name)));
+            _catalogLoaded = true;
+            RefreshCatalogSuggestions();
+        }
+        catch
+        {
+            /* browse still works; free-typed tags may fail if unknown to hub */
+        }
+    }
+
+    private void RefreshCatalogSuggestions()
+    {
+        CatalogTagSuggestions.Clear();
+        var q = TagDraft.Trim();
+        IEnumerable<CatalogTag> src = _allCatalogTags;
+        if (!string.IsNullOrEmpty(q))
+            src = src.Where(t => t.Name.Contains(q, StringComparison.OrdinalIgnoreCase));
+        foreach (var t in src.Take(48))
+            CatalogTagSuggestions.Add(t);
+    }
+
+    private string ResolveCatalogTagName(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+        var hit = _allCatalogTags.FirstOrDefault(t =>
+            string.Equals(t.Name, raw, StringComparison.OrdinalIgnoreCase));
+        return hit?.Name ?? raw.Trim();
+    }
+
+    /// <summary>
+    /// Prefer F95 numeric tag IDs when the catalog knows them — SAM ignores names.
+    /// Falls back to names so the hub can still resolve via its tag map.
+    /// </summary>
+    private string? FormatTagsQuery(IReadOnlyList<string> tags)
+    {
+        if (tags.Count == 0) return null;
+        var parts = new List<string>(tags.Count);
+        foreach (var tag in tags)
+        {
+            var hit = _allCatalogTags.FirstOrDefault(t =>
+                string.Equals(t.Name, tag, StringComparison.OrdinalIgnoreCase));
+            parts.Add(hit is not null ? hit.Id.ToString() : tag);
+        }
+        return string.Join(",", parts);
     }
 
     [RelayCommand]
     private async Task SearchAsync()
     {
+        var gen = ++_searchGeneration;
         Busy = true; Error = null; Status = null;
         try
         {
-            var dateDays = DatePreset switch
-            {
-                "7 days" => 7,
-                "30 days" => 30,
-                "90 days" => 90,
-                "1 year" => 365,
-                _ => 0
-            };
+            await EnsureCatalogTagsAsync();
+            if (gen != _searchGeneration) return;
+
+            var dateDays = 0;
+            if (DatePreset is not null && int.TryParse(DatePreset.Value, out var days))
+                dateDays = days;
+
+            var engineValue = Engine?.Value ?? "";
             var list = await _app.Hub.CatalogSearchAsync(
                 query: string.IsNullOrWhiteSpace(Query) ? null : Query.Trim(),
                 page: Page,
-                sort: Sort,
+                sort: SortBy?.Value ?? "date",
                 dateDays: dateDays > 0 ? dateDays : null,
-                tags: IncludeTags.Count > 0 ? string.Join(",", IncludeTags) : null,
-                notags: ExcludeTags.Count > 0 ? string.Join(",", ExcludeTags) : null,
+                tags: FormatTagsQuery(IncludeTags),
+                notags: FormatTagsQuery(ExcludeTags),
                 tagMode: TagMode?.Value ?? "and",
-                prefixes: string.IsNullOrWhiteSpace(Engine) || Engine == "Other" ? null : Engine);
+                prefixes: string.IsNullOrWhiteSpace(engineValue) || engineValue == "Other" ? null : engineValue);
+            if (gen != _searchGeneration) return;
+
+            if (engineValue == "Other")
+            {
+                list = list.Where(r =>
+                {
+                    var prefixes = (r.Prefixes ?? []).Select(p => p.ToLowerInvariant()).ToList();
+                    string[] known = ["ren'py", "renpy", "unity", "html", "rpgm", "vn"];
+                    return !prefixes.Any(p => known.Contains(p) || p.Replace("'", "") == "renpy");
+                }).ToList();
+            }
+            else if (!string.IsNullOrWhiteSpace(engineValue))
+            {
+                // SAM prefix filter is best-effort; also match labels on this page.
+                var eng = engineValue.ToLowerInvariant();
+                list = list.Where(r =>
+                {
+                    var prefixes = (r.Prefixes ?? []).Select(p => p.ToLowerInvariant()).ToList();
+                    if (prefixes.Count == 0) return true;
+                    return prefixes.Any(p =>
+                        p == eng || p.Replace("'", "") == eng.Replace("'", ""));
+                }).ToList();
+            }
+
             await RefreshLibraryThreadIdsAsync();
+            if (gen != _searchGeneration) return;
+
             Results.Clear();
             foreach (var r in list)
             {
@@ -1073,12 +1249,13 @@ public partial class BrowseViewModel : ViewModelBase
             }
             _loaded = true;
             var tagHint = IncludeTags.Count > 0 ? $" · tags: {string.Join(", ", IncludeTags)}" : "";
+            var sortHint = SortBy is null ? "" : $" · sort: {SortBy.Label}";
             Status = Results.Count == 0
                 ? "No catalog results. Check F95 login on the hub, or try another search."
-                : $"Page {Page} · {Results.Count} results{tagHint}";
+                : $"Page {Page} · {Results.Count} results{tagHint}{sortHint}";
         }
-        catch (Exception ex) { Error = ex.Message; _toasts.Error(ex.Message); }
-        finally { Busy = false; }
+        catch (Exception ex) { if (gen == _searchGeneration) { Error = ex.Message; _toasts.Error(ex.Message); } }
+        finally { if (gen == _searchGeneration) Busy = false; }
     }
 
     private async Task RefreshLibraryThreadIdsAsync()
