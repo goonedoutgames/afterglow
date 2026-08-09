@@ -139,6 +139,13 @@ public sealed class AfterglowAppService : IDisposable
         await _db.SaveUiPreferencesAsync(prefs, ct);
     }
 
+    public async Task ReloadPreferencesAsync(CancellationToken ct = default)
+    {
+        Preferences = await _db.GetUiPreferencesAsync(ct);
+        if (string.IsNullOrWhiteSpace(Preferences.LibraryRoot))
+            Preferences.LibraryRoot = AppPaths.DefaultLibraryRoot;
+    }
+
     /// <summary>Updates card scale only — avoids clobbering LibrarySetupComplete / LibraryRoot.</summary>
     public async Task SaveLibraryCardScaleAsync(double scale, CancellationToken ct = default)
     {
@@ -165,6 +172,7 @@ public sealed class AfterglowAppService : IDisposable
             AccentHex = UiPreferences.DefaultAccentHex
         };
         await _db.SaveUiPreferencesAsync(Preferences, ct);
+        try { WindowsStartup.SetEnabled(false); } catch { /* best effort */ }
         await _db.ClearDownloadJobsAsync(ct);
         await _db.ClearPendingPlaySessionsAsync(ct);
         Connection = await _db.GetConnectionConfigAsync(ct);

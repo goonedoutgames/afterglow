@@ -28,6 +28,13 @@ public sealed class UiPreferences
     public int HoverPreviewIntervalMs { get; set; } = 1800;
     /// <summary>Semver (no leading v) the user chose to ignore for update prompts.</summary>
     public string? IgnoredUpdateVersion { get; set; }
+    public double? WindowWidth { get; set; }
+    public double? WindowHeight { get; set; }
+    public int? WindowX { get; set; }
+    public int? WindowY { get; set; }
+    public bool WindowMaximized { get; set; }
+    /// <summary>Launch Afterglow when Windows starts (default off).</summary>
+    public bool StartWithWindows { get; set; }
 }
 
 public sealed class LocalInstall

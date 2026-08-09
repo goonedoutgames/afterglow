@@ -37,6 +37,12 @@ public sealed class LocalDatabase : IDisposable
         TryAddColumn("ui_prefs", "browse_hover_previews", "INTEGER NOT NULL DEFAULT 1");
         TryAddColumn("ui_prefs", "hover_preview_interval_ms", "INTEGER NOT NULL DEFAULT 1800");
         TryAddColumn("ui_prefs", "ignored_update_version", "TEXT");
+        TryAddColumn("ui_prefs", "window_width", "REAL");
+        TryAddColumn("ui_prefs", "window_height", "REAL");
+        TryAddColumn("ui_prefs", "window_x", "INTEGER");
+        TryAddColumn("ui_prefs", "window_y", "INTEGER");
+        TryAddColumn("ui_prefs", "window_maximized", "INTEGER NOT NULL DEFAULT 0");
+        TryAddColumn("ui_prefs", "start_with_windows", "INTEGER NOT NULL DEFAULT 0");
         TryAddColumn("download_jobs", "game_title", "TEXT");
     }
 
@@ -64,7 +70,9 @@ public sealed class LocalDatabase : IDisposable
             SELECT accent_hex, glass_blur, compact_density, library_root, download_concurrency, auto_extract,
                    COALESCE(library_setup_done, 0), COALESCE(library_card_scale, 1.0),
                    COALESCE(library_hover_previews, 1), COALESCE(browse_hover_previews, 1),
-                   COALESCE(hover_preview_interval_ms, 1800), ignored_update_version
+                   COALESCE(hover_preview_interval_ms, 1800), ignored_update_version,
+                   window_width, window_height, window_x, window_y,
+                   COALESCE(window_maximized, 0), COALESCE(start_with_windows, 0)
             FROM ui_prefs WHERE id = 1
             """,
             r => new UiPreferences
@@ -76,7 +84,13 @@ public sealed class LocalDatabase : IDisposable
                 LibraryHoverPreviewsEnabled = r.IsDBNull(8) || r.GetInt64(8) != 0,
                 BrowseHoverPreviewsEnabled = r.IsDBNull(9) || r.GetInt64(9) != 0,
                 HoverPreviewIntervalMs = r.IsDBNull(10) ? 1800 : Math.Clamp(r.GetInt32(10), 400, 10000),
-                IgnoredUpdateVersion = r.IsDBNull(11) ? null : r.GetString(11)
+                IgnoredUpdateVersion = r.IsDBNull(11) ? null : r.GetString(11),
+                WindowWidth = r.IsDBNull(12) ? null : r.GetDouble(12),
+                WindowHeight = r.IsDBNull(13) ? null : r.GetDouble(13),
+                WindowX = r.IsDBNull(14) ? null : r.GetInt32(14),
+                WindowY = r.IsDBNull(15) ? null : r.GetInt32(15),
+                WindowMaximized = !r.IsDBNull(16) && r.GetInt64(16) != 0,
+                StartWithWindows = !r.IsDBNull(17) && r.GetInt64(17) != 0
             }, new UiPreferences(), cancellationToken);
 
     public Task SaveUiPreferencesAsync(UiPreferences value, CancellationToken cancellationToken = default) =>
@@ -84,14 +98,18 @@ public sealed class LocalDatabase : IDisposable
             """
             INSERT INTO ui_prefs(id,accent_hex,glass_blur,compact_density,library_root,download_concurrency,auto_extract,
                                  library_setup_done,datanodes_api_key,library_card_scale,
-                                 library_hover_previews,browse_hover_previews,hover_preview_interval_ms,ignored_update_version)
-            VALUES(1,$accent,$blur,$compact,$root,$concurrency,$extract,$setup,NULL,$scale,$libHover,$browseHover,$hoverMs,$ignored)
+                                 library_hover_previews,browse_hover_previews,hover_preview_interval_ms,ignored_update_version,
+                                 window_width,window_height,window_x,window_y,window_maximized,start_with_windows)
+            VALUES(1,$accent,$blur,$compact,$root,$concurrency,$extract,$setup,NULL,$scale,$libHover,$browseHover,$hoverMs,$ignored,
+                   $winW,$winH,$winX,$winY,$winMax,$startWin)
             ON CONFLICT(id) DO UPDATE SET
               accent_hex=$accent, glass_blur=$blur, compact_density=$compact, library_root=$root,
               download_concurrency=$concurrency, auto_extract=$extract, library_setup_done=$setup,
               datanodes_api_key=NULL, library_card_scale=$scale,
               library_hover_previews=$libHover, browse_hover_previews=$browseHover,
-              hover_preview_interval_ms=$hoverMs, ignored_update_version=$ignored
+              hover_preview_interval_ms=$hoverMs, ignored_update_version=$ignored,
+              window_width=$winW, window_height=$winH, window_x=$winX, window_y=$winY,
+              window_maximized=$winMax, start_with_windows=$startWin
             """,
             [
                 ("$accent", value.AccentHex), ("$blur", value.GlassBlur), ("$compact", value.CompactDensity ? 1 : 0),
@@ -101,7 +119,13 @@ public sealed class LocalDatabase : IDisposable
                 ("$libHover", value.LibraryHoverPreviewsEnabled ? 1 : 0),
                 ("$browseHover", value.BrowseHoverPreviewsEnabled ? 1 : 0),
                 ("$hoverMs", Math.Clamp(value.HoverPreviewIntervalMs, 400, 10000)),
-                ("$ignored", value.IgnoredUpdateVersion)
+                ("$ignored", value.IgnoredUpdateVersion),
+                ("$winW", value.WindowWidth),
+                ("$winH", value.WindowHeight),
+                ("$winX", value.WindowX),
+                ("$winY", value.WindowY),
+                ("$winMax", value.WindowMaximized ? 1 : 0),
+                ("$startWin", value.StartWithWindows ? 1 : 0)
             ],
             cancellationToken);
 

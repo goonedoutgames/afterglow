@@ -96,6 +96,16 @@
 
       <Border Classes="glass">
         <StackPanel Spacing="10">
+          <TextBlock Text="Windows" FontWeight="SemiBold" />
+          <TextBlock Classes="help" TextWrapping="Wrap"
+                     Text="Window size and position are restored automatically on next launch. Startup is off by default." />
+          <CheckBox Content="Start Afterglow when Windows starts" IsChecked="{Binding StartWithWindows}" IsEnabled="{Binding !Busy}" />
+          <Button Classes="accent" Content="Save Windows settings" Command="{Binding SaveLocalPrefsCommand}" HorizontalAlignment="Left" IsEnabled="{Binding !Busy}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="glass">
+        <StackPanel Spacing="10">
           <TextBlock Text="Library hover previews" FontWeight="SemiBold" />
           <TextBlock Classes="help"
                      Text="On hover, cycle cover screenshots on Library cards. Browse loads cover images only for faster search results." />

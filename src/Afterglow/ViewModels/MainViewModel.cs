@@ -2176,6 +2176,7 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private string _storageSummary = "Storage: not loaded";
     [ObservableProperty] private bool _libraryHoverPreviewsEnabled = true;
     [ObservableProperty] private string _hoverPreviewIntervalText = "1800";
+    [ObservableProperty] private bool _startWithWindows;
     public string[] TagClickOptions { get; } = ["library", "browse"];
 
     private void ReportOk(string message)
@@ -2200,6 +2201,7 @@ public partial class SettingsViewModel : ViewModelBase
         AccentHex = _app.Preferences.AccentHex;
         LibraryHoverPreviewsEnabled = _app.Preferences.LibraryHoverPreviewsEnabled;
         HoverPreviewIntervalText = Math.Clamp(_app.Preferences.HoverPreviewIntervalMs, 400, 10000).ToString();
+        StartWithWindows = _app.Preferences.StartWithWindows;
         if (ThemeAccent.TryParseColor(AccentHex, out var c))
             AccentColor = c;
         var found = SidecarBootstrap.FindExistingExecutable();
@@ -2401,8 +2403,15 @@ public partial class SettingsViewModel : ViewModelBase
                 LibraryHoverPreviewsEnabled = LibraryHoverPreviewsEnabled,
                 BrowseHoverPreviewsEnabled = false,
                 HoverPreviewIntervalMs = hoverMs,
-                IgnoredUpdateVersion = existing.IgnoredUpdateVersion
+                IgnoredUpdateVersion = existing.IgnoredUpdateVersion,
+                WindowWidth = existing.WindowWidth,
+                WindowHeight = existing.WindowHeight,
+                WindowX = existing.WindowX,
+                WindowY = existing.WindowY,
+                WindowMaximized = existing.WindowMaximized,
+                StartWithWindows = StartWithWindows
             });
+            WindowsStartup.SetEnabled(StartWithWindows);
             ThemeAccent.Apply(_app.Preferences.AccentHex);
             ReportOk("Local preferences saved.");
         }
