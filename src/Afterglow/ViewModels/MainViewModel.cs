@@ -655,8 +655,10 @@ public partial class DownloadLinkItemViewModel : ViewModelBase
     public string Url { get; init; } = "";
     public string Host { get; init; } = "";
     public string? Platform { get; init; }
+    public string? Title { get; init; }
     public string DisplayName { get; init; } = "";
     public bool IsMasked { get; init; }
+    public bool HasTitle => !string.IsNullOrWhiteSpace(Title);
     public string HostLabel => Host;
     public string HostInitial => string.IsNullOrWhiteSpace(Host) ? "?" : char.ToUpperInvariant(Host[0]).ToString();
     public string PlatformLabel => BrandIcons.PlatformLabel(Platform);
@@ -2594,6 +2596,7 @@ public partial class GameDetailViewModel : ViewModelBase
                     Url = n.Url,
                     Host = n.Host,
                     Platform = n.Platform,
+                    Title = n.Title,
                     DisplayName = n.DisplayName,
                     IsMasked = n.IsMasked
                 };

@@ -22,3 +22,8 @@ Notable game tracking fields (`PATCH /api/v1/games/{id}`):
 - `play_status`: `unplayed` | `playing` | `completed` | `dropped`
 - `user_rating`: omit unchanged; JSON `null` clears; number sets (half-stars 0.5–5)
 - `user_notes`: string
+
+Download links (`GET /api/v1/games/{id}/download-links`):
+
+- `label` — platform (Windows, Linux, PC, …)
+- `title` — pack/section heading above a hoster cluster (Episode 5, v0.4 Full, …) when the thread uses one

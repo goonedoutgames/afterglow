@@ -150,6 +150,8 @@ public sealed class DownloadLink
     public string Url { get; set; } = "";
     public string Host { get; set; } = "unknown";
     public string? Label { get; set; }
+    /// <summary>Section / pack heading above hoster links (Episode 5, v0.4 Full, …).</summary>
+    public string? Title { get; set; }
 }
 
 public sealed class PlaySessionDto

@@ -9,6 +9,7 @@ public static class DownloadLinkFilter
         {
             Url = n.Url,
             Host = n.Host,
-            Label = n.Platform ?? n.DisplayName
+            Label = n.Platform ?? n.DisplayName,
+            Title = n.Title
         });
 }

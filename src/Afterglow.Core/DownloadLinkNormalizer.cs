@@ -12,6 +12,7 @@ public static class DownloadLinkNormalizer
         string Url,
         string Host,
         string? Platform,
+        string? Title,
         string DisplayName,
         bool IsMasked,
         string? OpenInBrowserUrl);
@@ -40,8 +41,9 @@ public static class DownloadLinkNormalizer
 
         // Prefer URL hints, then hub label (may already be Windows/Linux or PC).
         var platform = InferPlatform(url) ?? InferPlatform(link.Label) ?? NormalizePlatformLabel(link.Label);
-        var display = BuildDisplayName(url, host, platform, link.Label);
-        return new NormalizedLink(url, host, platform, display, isMasked, isMasked ? url : null);
+        var title = CleanSectionTitle(link.Title);
+        var display = BuildDisplayName(url, host, platform, title, link.Label);
+        return new NormalizedLink(url, host, platform, title, display, isMasked, isMasked ? url : null);
     }
 
     public static string ClassifyHost(string url, string? reportedHost = null)
@@ -192,10 +194,30 @@ public static class DownloadLinkNormalizer
         return string.IsNullOrWhiteSpace(host) ? null : host;
     }
 
-    private static string BuildDisplayName(string url, string host, string? platform, string? label)
+    private static string? CleanSectionTitle(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return null;
+        var t = title.Trim();
+        if (t.Length < 2 || t.Length > 80) return null;
+        // Drop bare platform-only leftovers that slipped through.
+        if (InferPlatform(t) is not null
+            && !t.Contains(' ', StringComparison.Ordinal)
+            && !t.Contains('-', StringComparison.Ordinal)
+            && t.Length < 20)
+            return null;
+        return t;
+    }
+
+    private static string BuildDisplayName(string url, string host, string? platform, string? title, string? label)
     {
         try
         {
+            if (!string.IsNullOrWhiteSpace(title))
+            {
+                if (platform is not null) return $"{title} · {platform}";
+                return title;
+            }
+
             if (url.Contains("f95zone.to/masked/", StringComparison.OrdinalIgnoreCase)
                 || url.Contains("f95zone.to/masked-navigation", StringComparison.OrdinalIgnoreCase))
             {
@@ -219,7 +241,7 @@ public static class DownloadLinkNormalizer
         }
         catch
         {
-            return host;
+            return platform is null ? host : $"{host} · {platform}";
         }
     }
 
