@@ -130,6 +130,7 @@ public sealed class HubApiClient : IDisposable
     public Task<List<F95SearchResult>> CatalogSearchAsync(
         string? query = null,
         int? page = null,
+        int? rows = null,
         string? sort = null,
         int? dateDays = null,
         string? creator = null,
@@ -143,6 +144,7 @@ public sealed class HubApiClient : IDisposable
             ("q", query),
             ("creator", creator),
             ("page", page?.ToString()),
+            ("rows", rows?.ToString()),
             ("sort", sort),
             ("date", dateDays is > 0 ? dateDays.Value.ToString() : null),
             ("tags", tags),

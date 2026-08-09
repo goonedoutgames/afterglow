@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using System.Collections.ObjectModel;
 using Afterglow.Core;
 using Afterglow.Core.Models;
@@ -462,6 +463,10 @@ public partial class LibrarySetupViewModel : ViewModelBase
 
 public partial class LibraryItemViewModel : ViewModelBase
 {
+    private readonly List<Bitmap> _galleryFrames = [];
+    private DispatcherTimer? _hoverTimer;
+    private int _hoverIndex;
+
     public long Id { get; init; }
     public string Title { get; init; } = "";
     public string Subtitle { get; init; } = "";
@@ -487,6 +492,43 @@ public partial class LibraryItemViewModel : ViewModelBase
     public List<string> ImageCandidates { get; init; } = [];
     [ObservableProperty] private Bitmap? _cover;
     [ObservableProperty] private AnimatedMedia? _coverAnimation;
+    [ObservableProperty] private bool _hoverEnabled = true;
+    [ObservableProperty] private int _hoverIntervalMs = 1800;
+
+    public void SetGalleryFrames(IEnumerable<Bitmap> frames, AnimatedMedia? animatedCover = null)
+    {
+        _galleryFrames.Clear();
+        _galleryFrames.AddRange(frames);
+        _hoverIndex = 0;
+        if (animatedCover is not null)
+            CoverAnimation = animatedCover;
+        Cover = _galleryFrames.FirstOrDefault() ?? animatedCover?.Preview;
+    }
+
+    public void StartHoverPreview()
+    {
+        if (!HoverEnabled || _galleryFrames.Count <= 1 || CoverAnimation is not null) return;
+        _hoverTimer ??= new DispatcherTimer();
+        _hoverTimer.Tick -= OnHoverTick;
+        _hoverTimer.Tick += OnHoverTick;
+        _hoverTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(HoverIntervalMs, 400, 10000));
+        _hoverTimer.Start();
+    }
+
+    public void StopHoverPreview()
+    {
+        _hoverTimer?.Stop();
+        _hoverIndex = 0;
+        if (_galleryFrames.Count > 0)
+            Cover = _galleryFrames[0];
+    }
+
+    private void OnHoverTick(object? sender, EventArgs e)
+    {
+        if (_galleryFrames.Count <= 1) return;
+        _hoverIndex = (_hoverIndex + 1) % _galleryFrames.Count;
+        Cover = _galleryFrames[_hoverIndex];
+    }
 }
 
 public partial class LibraryTagFilterItem : ViewModelBase
@@ -531,6 +573,10 @@ public partial class CloudSaveItemViewModel : ViewModelBase
 
 public partial class CatalogItemViewModel : ViewModelBase
 {
+    private readonly List<Bitmap> _galleryFrames = [];
+    private DispatcherTimer? _hoverTimer;
+    private int _hoverIndex;
+
     public F95SearchResult Result { get; init; } = new();
     public string Title => Result.Title;
     public string Subtitle => string.Join(" · ", new[] { Result.Creator, Result.Version }.Where(x => !string.IsNullOrWhiteSpace(x)));
@@ -539,9 +585,44 @@ public partial class CatalogItemViewModel : ViewModelBase
     public List<string> Tags => Result.Tags;
     [ObservableProperty] private Bitmap? _cover;
     [ObservableProperty] private bool _isInLibrary;
+    [ObservableProperty] private bool _hoverEnabled = true;
+    [ObservableProperty] private int _hoverIntervalMs = 1800;
     public string AddButtonLabel => IsInLibrary ? "Added" : "Add";
 
     partial void OnIsInLibraryChanged(bool value) => OnPropertyChanged(nameof(AddButtonLabel));
+
+    public void SetGalleryFrames(IEnumerable<Bitmap> frames)
+    {
+        _galleryFrames.Clear();
+        _galleryFrames.AddRange(frames);
+        _hoverIndex = 0;
+        Cover = _galleryFrames.FirstOrDefault();
+    }
+
+    public void StartHoverPreview()
+    {
+        if (!HoverEnabled || _galleryFrames.Count <= 1) return;
+        _hoverTimer ??= new DispatcherTimer();
+        _hoverTimer.Tick -= OnHoverTick;
+        _hoverTimer.Tick += OnHoverTick;
+        _hoverTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(HoverIntervalMs, 400, 10000));
+        _hoverTimer.Start();
+    }
+
+    public void StopHoverPreview()
+    {
+        _hoverTimer?.Stop();
+        _hoverIndex = 0;
+        if (_galleryFrames.Count > 0)
+            Cover = _galleryFrames[0];
+    }
+
+    private void OnHoverTick(object? sender, EventArgs e)
+    {
+        if (_galleryFrames.Count <= 1) return;
+        _hoverIndex = (_hoverIndex + 1) % _galleryFrames.Count;
+        Cover = _galleryFrames[_hoverIndex];
+    }
 }
 
 public partial class DownloadLinkItemViewModel : ViewModelBase
@@ -889,17 +970,23 @@ public partial class LibraryViewModel : ViewModelBase
 
     private async Task LoadCoverAsync(LibraryItemViewModel item)
     {
-        foreach (var url in item.ImageCandidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        var frames = new List<Bitmap>();
+        AnimatedMedia? animated = null;
+        foreach (var url in item.ImageCandidates.Distinct(StringComparer.OrdinalIgnoreCase).Take(8))
         {
             var media = await _media.GetMediaAsync(url);
             if (media is null) continue;
-            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                item.Cover = media.Preview;
-                item.CoverAnimation = media.IsAnimated ? media : null;
-            });
-            return;
+            if (animated is null && media.IsAnimated)
+                animated = media;
+            if (media.Preview is not null)
+                frames.Add(media.Preview);
         }
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            item.HoverEnabled = _app.Preferences.LibraryHoverPreviewsEnabled;
+            item.HoverIntervalMs = Math.Clamp(_app.Preferences.HoverPreviewIntervalMs, 400, 10000);
+            item.SetGalleryFrames(frames, animated);
+        });
     }
 
     [RelayCommand]
@@ -1013,16 +1100,30 @@ public partial class BrowseViewModel : ViewModelBase
     [ObservableProperty] private string _tagDraft = "";
     [ObservableProperty] private LibraryChoice? _tagMode;
     [ObservableProperty] private int _page = 1;
+    [ObservableProperty] private int _pageRows = 90;
+    [ObservableProperty] private bool _hasMore;
+    [ObservableProperty] private bool _canGoPrev;
+    [ObservableProperty] private bool _canGoNext;
     [ObservableProperty] private string? _error;
     [ObservableProperty] private string? _status;
     [ObservableProperty] private bool _busy;
     [ObservableProperty] private bool _hasIncludeTags;
+    [ObservableProperty] private bool _hasExcludeTags;
+    [ObservableProperty] private bool _hoverPreviewsEnabled = true;
+    [ObservableProperty] private int _hoverPreviewIntervalMs = 1800;
 
     public async Task EnsureLoadedAsync()
     {
+        ApplyHoverPrefs();
         await EnsureCatalogTagsAsync();
         if (_loaded && Results.Count > 0) return;
-        await SearchAsync();
+        await ExecuteSearchAsync();
+    }
+
+    private void ApplyHoverPrefs()
+    {
+        HoverPreviewsEnabled = _app.Preferences.BrowseHoverPreviewsEnabled;
+        HoverPreviewIntervalMs = Math.Clamp(_app.Preferences.HoverPreviewIntervalMs, 400, 10000);
     }
 
     /// <summary>Set include tag and force the next EnsureLoadedAsync / search to apply it.</summary>
@@ -1136,12 +1237,44 @@ public partial class BrowseViewModel : ViewModelBase
         _ = SearchAsync();
     }
 
+    [RelayCommand]
+    private void AddExcludeTag()
+    {
+        TryAddExcludeTag(ExcludeTagDraft);
+        ExcludeTagDraft = "";
+    }
+
+    [RelayCommand]
+    private void RemoveExcludeTag(string? tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag)) return;
+        var hit = ExcludeTags.FirstOrDefault(x => string.Equals(x, tag, StringComparison.OrdinalIgnoreCase));
+        if (hit is not null) ExcludeTags.Remove(hit);
+        HasExcludeTags = ExcludeTags.Count > 0;
+        Page = 1;
+        _ = SearchAsync();
+    }
+
+    private void TryAddExcludeTag(string? raw)
+    {
+        var t = ResolveCatalogTagName((raw ?? "").Trim());
+        if (string.IsNullOrEmpty(t) || t.All(char.IsDigit) || ExcludeTags.Count >= 10) return;
+        if (ExcludeTags.Any(x => string.Equals(x, t, StringComparison.OrdinalIgnoreCase))) return;
+        if (IncludeTags.Any(x => string.Equals(x, t, StringComparison.OrdinalIgnoreCase))) return;
+        ExcludeTags.Add(t);
+        HasExcludeTags = true;
+        Page = 1;
+        _ = SearchAsync();
+    }
+
+    [ObservableProperty] private string _excludeTagDraft = "";
+
     private async Task EnsureCatalogTagsAsync()
     {
         if (_catalogLoaded) return;
         try
         {
-            var list = await _app.Hub.GetCatalogTagsAsync(limit: 400);
+            var list = await _app.Hub.GetCatalogTagsAsync(limit: 800);
             _allCatalogTags.Clear();
             _allCatalogTags.AddRange(list.Where(t => !string.IsNullOrWhiteSpace(t.Name)));
             _catalogLoaded = true;
@@ -1192,6 +1325,12 @@ public partial class BrowseViewModel : ViewModelBase
     [RelayCommand]
     private async Task SearchAsync()
     {
+        Page = 1;
+        await ExecuteSearchAsync();
+    }
+
+    private async Task ExecuteSearchAsync()
+    {
         var gen = ++_searchGeneration;
         Busy = true; Error = null; Status = null;
         try
@@ -1204,9 +1343,11 @@ public partial class BrowseViewModel : ViewModelBase
                 dateDays = days;
 
             var engineValue = Engine?.Value ?? "";
+            ApplyHoverPrefs();
             var list = await _app.Hub.CatalogSearchAsync(
                 query: string.IsNullOrWhiteSpace(Query) ? null : Query.Trim(),
                 page: Page,
+                rows: PageRows,
                 sort: SortBy?.Value ?? "date",
                 dateDays: dateDays > 0 ? dateDays : null,
                 tags: FormatTagsQuery(IncludeTags),
@@ -1226,7 +1367,6 @@ public partial class BrowseViewModel : ViewModelBase
             }
             else if (!string.IsNullOrWhiteSpace(engineValue))
             {
-                // SAM prefix filter is best-effort; also match labels on this page.
                 var eng = engineValue.ToLowerInvariant();
                 list = list.Where(r =>
                 {
@@ -1243,16 +1383,25 @@ public partial class BrowseViewModel : ViewModelBase
             Results.Clear();
             foreach (var r in list)
             {
-                var item = new CatalogItemViewModel { Result = r, IsInLibrary = _libraryThreadIds.Contains(r.ThreadId) };
+                var item = new CatalogItemViewModel
+                {
+                    Result = r,
+                    IsInLibrary = _libraryThreadIds.Contains(r.ThreadId),
+                    HoverEnabled = HoverPreviewsEnabled,
+                    HoverIntervalMs = HoverPreviewIntervalMs
+                };
                 Results.Add(item);
                 _ = LoadCoverAsync(item);
             }
             _loaded = true;
+            HasMore = list.Count >= PageRows;
+            CanGoPrev = Page > 1;
+            CanGoNext = HasMore;
             var tagHint = IncludeTags.Count > 0 ? $" · tags: {string.Join(", ", IncludeTags)}" : "";
             var sortHint = SortBy is null ? "" : $" · sort: {SortBy.Label}";
             Status = Results.Count == 0
                 ? "No catalog results. Check F95 login on the hub, or try another search."
-                : $"Page {Page} · {Results.Count} results{tagHint}{sortHint}";
+                : $"Page {Page} · {Results.Count}/{PageRows}{tagHint}{sortHint}" + (HasMore ? " · more pages available" : " · last page");
         }
         catch (Exception ex) { if (gen == _searchGeneration) { Error = ex.Message; _toasts.Error(ex.Message); } }
         finally { if (gen == _searchGeneration) Busy = false; }
@@ -1277,15 +1426,33 @@ public partial class BrowseViewModel : ViewModelBase
         var candidates = new List<string>();
         if (!string.IsNullOrWhiteSpace(item.Result.Cover)) candidates.Add(item.Result.Cover);
         candidates.AddRange(item.Result.Screenshots.Where(x => !string.IsNullOrWhiteSpace(x)));
-        foreach (var url in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        var frames = new List<Bitmap>();
+        foreach (var url in candidates.Distinct(StringComparer.OrdinalIgnoreCase).Take(8))
         {
             var bmp = await _media.GetAsync(url);
-            if (bmp is not null)
-            {
-                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => item.Cover = bmp);
-                return;
-            }
+            if (bmp is not null) frames.Add(bmp);
         }
+        if (frames.Count == 0) return;
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            item.SetGalleryFrames(frames);
+        });
+    }
+
+    [RelayCommand]
+    private async Task NextPageAsync()
+    {
+        if (!CanGoNext) return;
+        Page++;
+        await ExecuteSearchAsync();
+    }
+
+    [RelayCommand]
+    private async Task PrevPageAsync()
+    {
+        if (!CanGoPrev) return;
+        Page--;
+        await ExecuteSearchAsync();
     }
 
     [RelayCommand]
@@ -1297,21 +1464,6 @@ public partial class BrowseViewModel : ViewModelBase
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(item.ThreadUrl) { UseShellExecute = true });
         }
         catch (Exception ex) { Error = ex.Message; }
-    }
-
-    [RelayCommand]
-    private async Task NextPageAsync()
-    {
-        Page++;
-        await SearchAsync();
-    }
-
-    [RelayCommand]
-    private async Task PrevPageAsync()
-    {
-        if (Page <= 1) return;
-        Page--;
-        await SearchAsync();
     }
 
     [RelayCommand]
@@ -1593,6 +1745,9 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private bool _appPasswordSet;
     [ObservableProperty] private string _tagClickAction = "library";
     [ObservableProperty] private string _storageSummary = "Storage: not loaded";
+    [ObservableProperty] private bool _libraryHoverPreviewsEnabled = true;
+    [ObservableProperty] private bool _browseHoverPreviewsEnabled = true;
+    [ObservableProperty] private int _hoverPreviewIntervalMs = 1800;
     public string[] TagClickOptions { get; } = ["library", "browse"];
 
     public async Task LoadAsync()
@@ -1601,6 +1756,9 @@ public partial class SettingsViewModel : ViewModelBase
         RemoteUrl = _app.Connection.RemoteApiBase ?? "";
         LibraryRoot = _app.Preferences.LibraryRoot;
         AccentHex = _app.Preferences.AccentHex;
+        LibraryHoverPreviewsEnabled = _app.Preferences.LibraryHoverPreviewsEnabled;
+        BrowseHoverPreviewsEnabled = _app.Preferences.BrowseHoverPreviewsEnabled;
+        HoverPreviewIntervalMs = Math.Clamp(_app.Preferences.HoverPreviewIntervalMs, 400, 10000);
         if (ThemeAccent.TryParseColor(AccentHex, out var c))
             AccentColor = c;
         var found = SidecarBootstrap.FindExistingExecutable();
@@ -1791,7 +1949,10 @@ public partial class SettingsViewModel : ViewModelBase
                 DownloadConcurrency = _app.Preferences.DownloadConcurrency,
                 AutoExtract = _app.Preferences.AutoExtract,
                 LibrarySetupComplete = true,
-                LibraryCardScale = _app.Preferences.LibraryCardScale
+                LibraryCardScale = _app.Preferences.LibraryCardScale,
+                LibraryHoverPreviewsEnabled = LibraryHoverPreviewsEnabled,
+                BrowseHoverPreviewsEnabled = BrowseHoverPreviewsEnabled,
+                HoverPreviewIntervalMs = Math.Clamp(HoverPreviewIntervalMs, 400, 10000)
             });
             ThemeAccent.Apply(_app.Preferences.AccentHex);
             Status = "Local preferences saved.";

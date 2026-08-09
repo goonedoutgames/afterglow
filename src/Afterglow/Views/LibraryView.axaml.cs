@@ -31,4 +31,16 @@ public partial class LibraryView : UserControl
         e.Handled = true;
         vm.ToggleTagFilterCommand.Execute(item);
     }
+
+    private void GameCard_PointerEntered(object? sender, PointerEventArgs e)
+    {
+        if (sender is Border { Tag: LibraryItemViewModel item })
+            item.StartHoverPreview();
+    }
+
+    private void GameCard_PointerExited(object? sender, PointerEventArgs e)
+    {
+        if (sender is Border { Tag: LibraryItemViewModel item })
+            item.StopHoverPreview();
+    }
 }

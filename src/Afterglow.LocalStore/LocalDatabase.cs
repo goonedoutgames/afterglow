@@ -33,6 +33,9 @@ public sealed class LocalDatabase : IDisposable
         TryAddColumn("ui_prefs", "library_setup_done", "INTEGER NOT NULL DEFAULT 0");
         TryAddColumn("ui_prefs", "datanodes_api_key", "TEXT");
         TryAddColumn("ui_prefs", "library_card_scale", "REAL NOT NULL DEFAULT 1.0");
+        TryAddColumn("ui_prefs", "library_hover_previews", "INTEGER NOT NULL DEFAULT 1");
+        TryAddColumn("ui_prefs", "browse_hover_previews", "INTEGER NOT NULL DEFAULT 1");
+        TryAddColumn("ui_prefs", "hover_preview_interval_ms", "INTEGER NOT NULL DEFAULT 1800");
         TryAddColumn("download_jobs", "game_title", "TEXT");
     }
 
@@ -56,19 +59,47 @@ public sealed class LocalDatabase : IDisposable
 
     public async Task<UiPreferences> GetUiPreferencesAsync(CancellationToken cancellationToken = default) =>
         await ReadSingleAsync(
-            "SELECT accent_hex, glass_blur, compact_density, library_root, download_concurrency, auto_extract, COALESCE(library_setup_done, 0), COALESCE(library_card_scale, 1.0) FROM ui_prefs WHERE id = 1",
+            """
+            SELECT accent_hex, glass_blur, compact_density, library_root, download_concurrency, auto_extract,
+                   COALESCE(library_setup_done, 0), COALESCE(library_card_scale, 1.0),
+                   COALESCE(library_hover_previews, 1), COALESCE(browse_hover_previews, 1),
+                   COALESCE(hover_preview_interval_ms, 1800)
+            FROM ui_prefs WHERE id = 1
+            """,
             r => new UiPreferences
             {
                 AccentHex = r.GetString(0), GlassBlur = r.GetDouble(1), CompactDensity = r.GetInt64(2) != 0,
                 LibraryRoot = r.GetString(3), DownloadConcurrency = r.GetInt32(4), AutoExtract = r.GetInt64(5) != 0,
                 LibrarySetupComplete = r.GetInt64(6) != 0,
-                LibraryCardScale = r.IsDBNull(7) ? 1.0 : r.GetDouble(7)
+                LibraryCardScale = r.IsDBNull(7) ? 1.0 : r.GetDouble(7),
+                LibraryHoverPreviewsEnabled = r.IsDBNull(8) || r.GetInt64(8) != 0,
+                BrowseHoverPreviewsEnabled = r.IsDBNull(9) || r.GetInt64(9) != 0,
+                HoverPreviewIntervalMs = r.IsDBNull(10) ? 1800 : Math.Clamp(r.GetInt32(10), 400, 10000)
             }, new UiPreferences(), cancellationToken);
 
     public Task SaveUiPreferencesAsync(UiPreferences value, CancellationToken cancellationToken = default) =>
         ExecuteAsync(
-            "INSERT INTO ui_prefs(id,accent_hex,glass_blur,compact_density,library_root,download_concurrency,auto_extract,library_setup_done,datanodes_api_key,library_card_scale) VALUES(1,$accent,$blur,$compact,$root,$concurrency,$extract,$setup,NULL,$scale) ON CONFLICT(id) DO UPDATE SET accent_hex=$accent,glass_blur=$blur,compact_density=$compact,library_root=$root,download_concurrency=$concurrency,auto_extract=$extract,library_setup_done=$setup,datanodes_api_key=NULL,library_card_scale=$scale",
-            [("$accent", value.AccentHex), ("$blur", value.GlassBlur), ("$compact", value.CompactDensity ? 1 : 0), ("$root", value.LibraryRoot), ("$concurrency", value.DownloadConcurrency), ("$extract", value.AutoExtract ? 1 : 0), ("$setup", value.LibrarySetupComplete ? 1 : 0), ("$scale", value.LibraryCardScale)],
+            """
+            INSERT INTO ui_prefs(id,accent_hex,glass_blur,compact_density,library_root,download_concurrency,auto_extract,
+                                 library_setup_done,datanodes_api_key,library_card_scale,
+                                 library_hover_previews,browse_hover_previews,hover_preview_interval_ms)
+            VALUES(1,$accent,$blur,$compact,$root,$concurrency,$extract,$setup,NULL,$scale,$libHover,$browseHover,$hoverMs)
+            ON CONFLICT(id) DO UPDATE SET
+              accent_hex=$accent, glass_blur=$blur, compact_density=$compact, library_root=$root,
+              download_concurrency=$concurrency, auto_extract=$extract, library_setup_done=$setup,
+              datanodes_api_key=NULL, library_card_scale=$scale,
+              library_hover_previews=$libHover, browse_hover_previews=$browseHover,
+              hover_preview_interval_ms=$hoverMs
+            """,
+            [
+                ("$accent", value.AccentHex), ("$blur", value.GlassBlur), ("$compact", value.CompactDensity ? 1 : 0),
+                ("$root", value.LibraryRoot), ("$concurrency", value.DownloadConcurrency),
+                ("$extract", value.AutoExtract ? 1 : 0), ("$setup", value.LibrarySetupComplete ? 1 : 0),
+                ("$scale", value.LibraryCardScale),
+                ("$libHover", value.LibraryHoverPreviewsEnabled ? 1 : 0),
+                ("$browseHover", value.BrowseHoverPreviewsEnabled ? 1 : 0),
+                ("$hoverMs", Math.Clamp(value.HoverPreviewIntervalMs, 400, 10000))
+            ],
             cancellationToken);
 
     public Task UpdateLibraryCardScaleAsync(double scale, CancellationToken cancellationToken = default) =>

@@ -22,6 +22,10 @@ public sealed class UiPreferences
     public bool LibrarySetupComplete { get; set; }
     /// <summary>Library grid card scale (0.75–1.5). Default 1.0.</summary>
     public double LibraryCardScale { get; set; } = 1.0;
+    public bool LibraryHoverPreviewsEnabled { get; set; } = true;
+    public bool BrowseHoverPreviewsEnabled { get; set; } = true;
+    /// <summary>Hover slideshow interval in milliseconds (400–10000).</summary>
+    public int HoverPreviewIntervalMs { get; set; } = 1800;
 }
 
 public sealed class LocalInstall

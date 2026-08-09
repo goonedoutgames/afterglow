@@ -102,7 +102,10 @@
             <Border Classes="game-card-host"
                     Width="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).CardWidth}"
                     Height="{Binding $parent[UserControl].((vm:LibraryViewModel)DataContext).CardHeight}"
-                    PointerPressed="GameCard_PointerPressed" Tag="{Binding}">
+                    PointerPressed="GameCard_PointerPressed"
+                    PointerEntered="GameCard_PointerEntered"
+                    PointerExited="GameCard_PointerExited"
+                    Tag="{Binding}">
               <Border Classes="game-card">
                 <Border Classes="game-card-face">
                   <DockPanel>
