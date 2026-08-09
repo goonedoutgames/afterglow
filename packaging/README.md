@@ -31,6 +31,7 @@ publish/windows/
 ### App icon
 
 Multi-size `src/Afterglow/Assets/afterglow.ico` (taskbar / exe / installer / BrowserHost).
+Magick writes BMP frames for smaller sizes and PNG for 256 so **Inno SetupIconFile** and the Windows shell both resolve the icon (PNG-only ICOs often fail for Setup.exe).
 
 Source art: `assets/Afterglow_logo.png` (+ `assets/Afterglow_logo.ico` for reference). UI uses `src/Afterglow/Assets/afterglow-logo.png`. `avn-hub-logo.webp` is only for Remote hub connect branding.
 
@@ -40,6 +41,7 @@ Regenerate the Windows icon:
 dotnet run --project tools/IconTool -- assets/Afterglow_logo.png src/Afterglow/Assets/afterglow.ico src/Afterglow/Assets/afterglow-logo.png 512
 ```
 
+`publish-windows.ps1` also copies `Afterglow.ico` next to the published exe for Start Menu shortcuts.
 ### CI — `.github/workflows/package.yml`
 
 On every run: portable zip + Setup.exe artifacts.  

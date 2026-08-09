@@ -38,3 +38,15 @@ Build from the avn-hub repo, download a Windows release asset, or pass -AvnHubEx
 }
 
 Write-Host "Done: $Output"
+
+# Ensure shell / Inno shortcuts can resolve a stable .ico next to the payload.
+$iconSrc = Join-Path $root "src\Afterglow\Assets\afterglow.ico"
+$iconOut = Join-Path $Output "Assets\afterglow.ico"
+if (Test-Path $iconSrc) {
+    New-Item -ItemType Directory -Force -Path (Split-Path $iconOut) | Out-Null
+    Copy-Item $iconSrc $iconOut -Force
+    Copy-Item $iconSrc (Join-Path $Output "Afterglow.ico") -Force
+    Write-Host "Synced app icon: Assets\afterglow.ico + Afterglow.ico"
+} else {
+    Write-Warning "Missing $iconSrc — installer shortcuts may fall back to the exe resource."
+}

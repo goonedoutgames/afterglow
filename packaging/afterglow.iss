@@ -54,9 +54,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Afterglow"; Filename: "{app}\Afterglow.exe"; WorkingDir: "{app}"
+Name: "{group}\Afterglow"; Filename: "{app}\Afterglow.exe"; WorkingDir: "{app}"; \
+    IconFilename: "{app}\Afterglow.ico"; AppUserModelID: "GoonedOutGames.Afterglow"
 Name: "{group}\Uninstall Afterglow"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Afterglow"; Filename: "{app}\Afterglow.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autodesktop}\Afterglow"; Filename: "{app}\Afterglow.exe"; WorkingDir: "{app}"; \
+    IconFilename: "{app}\Afterglow.ico"; AppUserModelID: "GoonedOutGames.Afterglow"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\Afterglow.exe"; Description: "{cm:LaunchProgram,Afterglow}"; Flags: nowait postinstall skipifsilent
