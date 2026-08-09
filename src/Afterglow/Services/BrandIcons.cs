@@ -62,6 +62,8 @@ public static class BrandIcons
             "catbox" => "catbox.moe",
             "bunkr" => "bunkr.si",
             "buzzheavier" => "buzzheavier.com",
+            "vikingfile" => "vikingfile.com",
+            "f95" => "f95zone.to",
             "mixdrop" => "mixdrop.ag",
             "uploadhaven" => "uploadhaven.com",
             "http" => null,

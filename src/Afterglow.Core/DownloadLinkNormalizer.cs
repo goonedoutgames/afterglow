@@ -59,6 +59,8 @@ public static class DownloadLinkNormalizer
         if (u.Contains("pixeldrain.com")) return "pixeldrain";
         if (u.Contains("datanodes.to")) return "datanodes";
         if (u.Contains("buzzheavier.com")) return "buzzheavier";
+        if (u.Contains("vikingfile.com")) return "vikingfile";
+        if (u.Contains("attachments.f95zone.to") || u.Contains("f95zone.to/attachments/")) return "f95";
         if (u.Contains("mixdrop.")) return "mixdrop";
         if (u.Contains("uploadhaven.com")) return "uploadhaven";
         if (u.Contains("mediafire.com")) return "mediafire";
@@ -212,36 +214,33 @@ public static class DownloadLinkNormalizer
     {
         try
         {
-            if (!string.IsNullOrWhiteSpace(title))
-            {
-                if (platform is not null) return $"{title} · {platform}";
-                return title;
-            }
+            // Prefer platform (or host) as the row label — pack title is shown as a group header in UI.
+            if (platform is not null)
+                return platform;
+
+            if (!string.IsNullOrWhiteSpace(title)
+                && !title.Equals("Extras", StringComparison.OrdinalIgnoreCase)
+                && !title.Equals("Extra", StringComparison.OrdinalIgnoreCase))
+                return title.Trim();
 
             if (url.Contains("f95zone.to/masked/", StringComparison.OrdinalIgnoreCase)
                 || url.Contains("f95zone.to/masked-navigation", StringComparison.OrdinalIgnoreCase))
-            {
-                var masked = $"Masked {host}";
-                return platform is null ? masked : $"{masked} · {platform}";
-            }
+                return $"Masked {host}";
 
             if (!string.IsNullOrWhiteSpace(label) && label.Length < 80 && !LooksLikeOpaqueId(label)
                 && InferPlatform(label) is null)
-                return platform is null ? label.Trim() : $"{platform} · {label.Trim()}";
+                return label.Trim();
 
             var uri = new Uri(url);
             var file = Path.GetFileName(uri.AbsolutePath);
             if (!string.IsNullOrWhiteSpace(file) && file.Contains('.') && !LooksLikeOpaqueId(file))
-            {
-                var name = Uri.UnescapeDataString(file);
-                return platform is null ? name : $"{platform} · {name}";
-            }
+                return Uri.UnescapeDataString(file);
 
-            return platform is null ? host : $"{host} · {platform}";
+            return host;
         }
         catch
         {
-            return platform is null ? host : $"{host} · {platform}";
+            return host;
         }
     }
 
@@ -266,8 +265,7 @@ public static class DownloadLinkNormalizer
         u.Contains("f95zone.to/threads/") ||
         u.Contains("f95zone.to/members/") ||
         u.Contains("f95zone.to/styles/") ||
-        u.Contains("f95zone.to/data/") ||
-        u.Contains("attachments.f95zone.to");
+        u.Contains("f95zone.to/data/");
 
     private static bool LooksLikeArchive(string u) =>
         u.EndsWith(".zip") || u.Contains(".zip?") ||

@@ -713,6 +713,12 @@ public partial class DownloadLinkItemViewModel : ViewModelBase
     [ObservableProperty] private Bitmap? _hostIcon;
 }
 
+/// <summary>Pack / extras section heading in the download table.</summary>
+public sealed class DownloadSectionHeaderViewModel
+{
+    public string Title { get; init; } = "";
+}
+
 public partial class LibraryViewModel : ViewModelBase
 {
     private readonly AfterglowAppService _app;
@@ -2624,13 +2630,14 @@ public partial class GameDetailViewModel : ViewModelBase
     public string InstallChevron => InstallExpanded ? "▾" : "▸";
 
     public ObservableCollection<DownloadLinkItemViewModel> AllLinks { get; } = [];
-    public ObservableCollection<DownloadLinkItemViewModel> Links { get; } = [];
+    public ObservableCollection<object> Links { get; } = [];
     public ObservableCollection<string> PlatformFilters { get; } = ["All", "Windows", "Linux", "PC", "Mac", "Android", "Unknown"];
     public ObservableCollection<CloudSaveItemViewModel> Saves { get; } = [];
     public ObservableCollection<ScreenshotThumbViewModel> Screenshots { get; } = [];
     public ObservableCollection<PlayStatusPillViewModel> StatusPills { get; } = [];
     public ObservableCollection<StarSlotViewModel> YourStars { get; } = [];
     public ObservableCollection<StarSlotViewModel> F95Stars { get; } = [];
+    private static readonly SemaphoreSlim ShotLoadGate = new(3, 3);
     [ObservableProperty] private string? _f95Url;
     [ObservableProperty] private string _playStatus = "unplayed";
     [ObservableProperty] private double? _userRating;
@@ -2728,7 +2735,6 @@ public partial class GameDetailViewModel : ViewModelBase
                 CanSetCover = cached is not null
             };
             Screenshots.Add(thumb);
-            _ = LoadShotAsync(thumb);
         }
         HasScreenshots = Screenshots.Count > 0;
         GalleryHint = HasScreenshots
@@ -2736,6 +2742,8 @@ public partial class GameDetailViewModel : ViewModelBase
             : "No screenshots yet — Refresh metadata downloads the gallery onto the hub.";
         if (!HasScreenshots)
             MediaStatus = (MediaStatus is null ? "" : MediaStatus + "\n") + GalleryHint;
+        else
+            _ = WarmScreenshotStripAsync();
 
         AllLinks.Clear();
         try
@@ -2759,6 +2767,20 @@ public partial class GameDetailViewModel : ViewModelBase
                 Status = "No hoster download links found on the F95 thread (hub may need F95 login).";
         }
         catch (Exception ex) { Status = "Download links unavailable: " + ex.Message; }
+    }
+
+    private async Task WarmScreenshotStripAsync()
+    {
+        // Eager-load the selected preview + a short thumb runway; rest load in background with a gate.
+        if (Screenshots.Count == 0) return;
+        await LoadShotAsync(Screenshots[0], preferAnimation: true);
+        var runway = Math.Min(Screenshots.Count, 8);
+        var tasks = new List<Task>();
+        for (var i = 1; i < runway; i++)
+            tasks.Add(LoadShotAsync(Screenshots[i], preferAnimation: false));
+        await Task.WhenAll(tasks);
+        for (var i = runway; i < Screenshots.Count; i++)
+            _ = LoadShotAsync(Screenshots[i], preferAnimation: false);
     }
 
     private async Task LoadHostIconAsync(DownloadLinkItemViewModel item)
@@ -2830,7 +2852,67 @@ public partial class GameDetailViewModel : ViewModelBase
         IEnumerable<DownloadLinkItemViewModel> q = AllLinks;
         if (!string.Equals(PlatformFilter, "All", StringComparison.OrdinalIgnoreCase))
             q = AllLinks.Where(l => DownloadLinkNormalizer.MatchesFilter(l.Platform, PlatformFilter));
-        foreach (var link in q) Links.Add(link);
+
+        string? lastHeader = null;
+        foreach (var link in q)
+        {
+            var header = string.IsNullOrWhiteSpace(link.Title) ? "Downloads" : link.Title!.Trim();
+            if (!string.Equals(header, lastHeader, StringComparison.OrdinalIgnoreCase))
+            {
+                Links.Add(new DownloadSectionHeaderViewModel { Title = header });
+                lastHeader = header;
+            }
+            Links.Add(link);
+        }
+    }
+
+    private async Task LoadShotAsync(ScreenshotThumbViewModel thumb, bool preferAnimation = false)
+    {
+        await ShotLoadGate.WaitAsync();
+        try
+        {
+            AnimatedMedia? media = preferAnimation
+                ? await _media.GetMediaAsync(thumb.Url)
+                : null;
+            if (media is null)
+            {
+                // Thumbs: still image only — avoids decoding every GIF animation up-front.
+                var bmp = await _media.GetAsync(thumb.Url);
+                if (bmp is null && !string.IsNullOrWhiteSpace(thumb.FallbackUrl))
+                    bmp = await _media.GetAsync(thumb.FallbackUrl);
+                if (bmp is null)
+                {
+                    if (_media.LastError is not null)
+                        MediaStatus = _media.LastError;
+                    return;
+                }
+                media = new AnimatedMedia { Preview = bmp };
+            }
+            else if (!string.IsNullOrWhiteSpace(thumb.FallbackUrl) && media.Preview is null)
+            {
+                media = await _media.GetMediaAsync(thumb.FallbackUrl) ?? media;
+            }
+
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                thumb.Image = media.Preview;
+                thumb.Animation = media.IsAnimated ? media : null;
+                if (SelectedScreenshot is null)
+                {
+                    SelectedScreenshot = media.Preview;
+                    SelectedAnimation = media.IsAnimated ? media : null;
+                }
+                if (IsGalleryOpen && GalleryIndex == thumb.Index)
+                {
+                    GalleryImage = media.Preview;
+                    GalleryAnimation = media.IsAnimated ? media : null;
+                }
+            });
+        }
+        finally
+        {
+            ShotLoadGate.Release();
+        }
     }
 
     private async Task LoadCoverAsync(IEnumerable<string> urls)
@@ -2846,34 +2928,6 @@ public partial class GameDetailViewModel : ViewModelBase
             });
             return;
         }
-    }
-
-    private async Task LoadShotAsync(ScreenshotThumbViewModel thumb)
-    {
-        var media = await _media.GetMediaAsync(thumb.Url);
-        if (media is null && !string.IsNullOrWhiteSpace(thumb.FallbackUrl))
-            media = await _media.GetMediaAsync(thumb.FallbackUrl);
-        if (media is null)
-        {
-            if (_media.LastError is not null)
-                MediaStatus = _media.LastError;
-            return;
-        }
-        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            thumb.Image = media.Preview;
-            thumb.Animation = media.IsAnimated ? media : null;
-            if (SelectedScreenshot is null)
-            {
-                SelectedScreenshot = media.Preview;
-                SelectedAnimation = media.IsAnimated ? media : null;
-            }
-            if (IsGalleryOpen && GalleryIndex == thumb.Index)
-            {
-                GalleryImage = media.Preview;
-                GalleryAnimation = media.IsAnimated ? media : null;
-            }
-        });
     }
 
     [RelayCommand]
@@ -2952,6 +3006,8 @@ public partial class GameDetailViewModel : ViewModelBase
         for (var i = 0; i < Screenshots.Count; i++)
             Screenshots[i].IsSelected = i == index;
         IsGalleryOpen = true;
+        if (shot.Animation is null)
+            _ = LoadShotAsync(shot, preferAnimation: true);
     }
 
     [RelayCommand]
