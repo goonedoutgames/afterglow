@@ -32,4 +32,19 @@ public partial class BrowseView : UserControl
         e.Handled = true;
         vm.ToggleCatalogTagCommand.Execute(tag);
     }
+
+    private void PreviewBackdrop_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (DataContext is not BrowseViewModel vm) return;
+        e.Handled = true;
+        vm.ClosePreviewCommand.Execute(null);
+    }
+
+    private void PreviewShot_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not Border { Tag: CatalogPreviewShotViewModel shot }) return;
+        if (DataContext is not BrowseViewModel vm) return;
+        e.Handled = true;
+        vm.SelectPreviewShotCommand.Execute(shot);
+    }
 }

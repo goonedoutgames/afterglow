@@ -9,6 +9,7 @@ using System.Collections.ObjectModel;
 using Afterglow.Core;
 using Afterglow.Core.Models;
 using Afterglow.Downloads;
+using Afterglow.HubClient;
 using Afterglow.HubSidecar;
 using Afterglow.Launcher;
 using Afterglow.Services;
@@ -38,7 +39,7 @@ public partial class MainViewModel : ViewModelBase
         _navBanners = NavBannerUris.Select(LoadBanner).ToArray();
         FirstRun = new FirstRunViewModel(app, OnConfigured);
         LibrarySetup = new LibrarySetupViewModel(app, OnLibrarySetupDone);
-        Library = new LibraryViewModel(app, media, OpenGameAsync);
+        Library = new LibraryViewModel(app, media, toasts, OpenGameAsync);
         Browse = new BrowseViewModel(app, media, toasts);
         Downloads = new DownloadsViewModel(app, media);
         Settings = new SettingsViewModel(app, toasts, OnConfigured, OnFactoryReset);
@@ -602,14 +603,51 @@ public partial class CatalogItemViewModel : ViewModelBase
     public F95SearchResult Result { get; init; } = new();
     public string Title => Result.Title;
     public string Subtitle => string.Join(" · ", new[] { Result.Creator, Result.Version }.Where(x => !string.IsNullOrWhiteSpace(x)));
-    public string Meta => Result.Rating > 0 ? $"★ {Result.Rating:0.0}" : "";
+    public string Meta
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (Result.Rating > 0) parts.Add($"★ {Result.Rating:0.0}");
+            if (Result.Likes is long likes) parts.Add($"Likes {FormatCount(likes)}");
+            if (Result.Views is long views) parts.Add($"Views {FormatCount(views)}");
+            if (!string.IsNullOrWhiteSpace(Result.Date)) parts.Add(Result.Date);
+            return string.Join(" · ", parts);
+        }
+    }
     public string? ThreadUrl => string.IsNullOrWhiteSpace(Result.Url) ? null : Result.Url;
     public List<string> Tags => Result.Tags;
     [ObservableProperty] private Bitmap? _cover;
     [ObservableProperty] private bool _isInLibrary;
-    public string AddButtonLabel => IsInLibrary ? "Added" : "Add";
+    [ObservableProperty] private bool _isAdding;
+    public string AddButtonLabel => IsInLibrary ? "Added" : IsAdding ? "Adding…" : "Add";
+    public bool CanAdd => !IsInLibrary && !IsAdding;
 
-    partial void OnIsInLibraryChanged(bool value) => OnPropertyChanged(nameof(AddButtonLabel));
+    partial void OnIsInLibraryChanged(bool value)
+    {
+        OnPropertyChanged(nameof(AddButtonLabel));
+        OnPropertyChanged(nameof(CanAdd));
+    }
+
+    partial void OnIsAddingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(AddButtonLabel));
+        OnPropertyChanged(nameof(CanAdd));
+    }
+
+    private static string FormatCount(long n)
+    {
+        if (n >= 1_000_000) return $"{n / 1_000_000.0:0.0}M";
+        if (n >= 1_000) return n >= 10_000 ? $"{n / 1000}K" : $"{n / 1000.0:0.0}K";
+        return n.ToString();
+    }
+}
+
+public partial class CatalogPreviewShotViewModel : ViewModelBase
+{
+    public string Url { get; init; } = "";
+    [ObservableProperty] private Bitmap? _image;
+    [ObservableProperty] private bool _isSelected;
 }
 
 public partial class DownloadLinkItemViewModel : ViewModelBase
@@ -632,14 +670,16 @@ public partial class LibraryViewModel : ViewModelBase
 {
     private readonly AfterglowAppService _app;
     private readonly MediaCacheService _media;
+    private readonly ToastService _toasts;
     private readonly Func<long, Task> _openGame;
     private readonly List<LibraryItemViewModel> _allGames = [];
     private bool _suppressFilterRefresh;
 
-    public LibraryViewModel(AfterglowAppService app, MediaCacheService media, Func<long, Task> openGame)
+    public LibraryViewModel(AfterglowAppService app, MediaCacheService media, ToastService toasts, Func<long, Task> openGame)
     {
         _app = app;
         _media = media;
+        _toasts = toasts;
         _openGame = openGame;
         _suppressFilterRefresh = true;
         SortBy = SortChoices[0];
@@ -984,7 +1024,9 @@ public partial class LibraryViewModel : ViewModelBase
     [RelayCommand]
     private async Task CheckUpdatesAsync()
     {
+        if (Busy) return;
         Busy = true; Error = null; MediaStatus = "Checking library for updates…";
+        _toasts.Info("Checking library for updates…");
         try
         {
             var results = await _app.Hub.CheckAllUpdatesAsync();
@@ -993,8 +1035,16 @@ public partial class LibraryViewModel : ViewModelBase
             MediaStatus = updates > 0
                 ? $"Update check finished — {updates} game{(updates == 1 ? "" : "s")} with a newer F95 version."
                 : "Update check finished — library is up to date.";
+            if (updates > 0) _toasts.Warning(MediaStatus);
+            else _toasts.Success(MediaStatus);
         }
-        catch (Exception ex) { Error = ex.Message; MediaStatus = null; }
+        catch (Exception ex)
+        {
+            var msg = HubApiException.FriendlyMessage(ex, "Couldn't check for updates");
+            Error = msg;
+            MediaStatus = null;
+            _toasts.Error(msg);
+        }
         finally { Busy = false; }
     }
 
@@ -1037,6 +1087,8 @@ public partial class BrowseViewModel : ViewModelBase
         SortBy = SortChoices[0];
         DatePreset = DateChoices[0];
         Engine = EngineChoices[0];
+        StatusFilter = StatusChoices[0];
+        SearchMode = SearchModeChoices[0];
         TagMode = TagModeOptions[0];
         _suppressFilterRefresh = false;
     }
@@ -1075,29 +1127,66 @@ public partial class BrowseViewModel : ViewModelBase
         new("Other", "Other")
     ];
 
+    public ObservableCollection<LibraryChoice> StatusChoices { get; } =
+    [
+        new("", "Any status"),
+        new("Completed", "Completed"),
+        new("Abandoned", "Abandoned"),
+        new("On Hold", "On Hold"),
+        new("Cancelled", "Cancelled")
+    ];
+
+    public ObservableCollection<LibraryChoice> SearchModeChoices { get; } =
+    [
+        new("title", "Title"),
+        new("creator", "Creator")
+    ];
+
     public ObservableCollection<LibraryChoice> TagModeOptions { get; } =
     [
         new("and", "Match all (AND)"),
         new("or", "Match any (OR)")
     ];
 
+    public ObservableCollection<CatalogPreviewShotViewModel> PreviewShots { get; } = [];
+
     [ObservableProperty] private string _query = "";
     [ObservableProperty] private LibraryChoice? _sortBy;
     [ObservableProperty] private LibraryChoice? _datePreset;
     [ObservableProperty] private LibraryChoice? _engine;
+    [ObservableProperty] private LibraryChoice? _statusFilter;
+    [ObservableProperty] private LibraryChoice? _searchMode;
     [ObservableProperty] private string _addByUrl = "";
     [ObservableProperty] private string _tagDraft = "";
     [ObservableProperty] private LibraryChoice? _tagMode;
     [ObservableProperty] private int _page = 1;
     [ObservableProperty] private int _pageRows = 90;
+    [ObservableProperty] private int _totalPages;
     [ObservableProperty] private bool _hasMore;
     [ObservableProperty] private bool _canGoPrev;
     [ObservableProperty] private bool _canGoNext;
+    [ObservableProperty] private string _pageLabel = "Page 1";
     [ObservableProperty] private string? _error;
     [ObservableProperty] private string? _status;
     [ObservableProperty] private bool _busy;
     [ObservableProperty] private bool _hasIncludeTags;
     [ObservableProperty] private bool _hasExcludeTags;
+    [ObservableProperty] private bool _isPreviewOpen;
+    [ObservableProperty] private bool _previewBusy;
+    [ObservableProperty] private string? _previewError;
+    [ObservableProperty] private string _previewTitle = "";
+    [ObservableProperty] private string _previewSubtitle = "";
+    [ObservableProperty] private string? _previewDescription;
+    [ObservableProperty] private string _previewMeta = "";
+    [ObservableProperty] private Bitmap? _previewCover;
+    [ObservableProperty] private Bitmap? _previewSelectedShot;
+    [ObservableProperty] private bool _previewInLibrary;
+    [ObservableProperty] private bool _previewCanAdd;
+    [ObservableProperty] private string _previewAddLabel = "Add to library";
+    [ObservableProperty] private string? _previewThreadUrl;
+    private long? _previewThreadId;
+    private long? _previewLibraryGameId;
+    private F95SearchResult? _previewResult;
 
     public async Task EnsureLoadedAsync()
     {
@@ -1204,6 +1293,20 @@ public partial class BrowseViewModel : ViewModelBase
     }
 
     partial void OnEngineChanged(LibraryChoice? value)
+    {
+        if (_suppressFilterRefresh || !_loaded || value is null) return;
+        Page = 1;
+        _ = SearchAsync();
+    }
+
+    partial void OnStatusFilterChanged(LibraryChoice? value)
+    {
+        if (_suppressFilterRefresh || !_loaded || value is null) return;
+        Page = 1;
+        _ = SearchAsync();
+    }
+
+    partial void OnSearchModeChanged(LibraryChoice? value)
     {
         if (_suppressFilterRefresh || !_loaded || value is null) return;
         Page = 1;
@@ -1323,8 +1426,26 @@ public partial class BrowseViewModel : ViewModelBase
                 dateDays = days;
 
             var engineValue = Engine?.Value ?? "";
-            var list = await _app.Hub.CatalogSearchAsync(
-                query: string.IsNullOrWhiteSpace(Query) ? null : Query.Trim(),
+            var statusValue = StatusFilter?.Value ?? "";
+            var mode = SearchMode?.Value ?? "title";
+            var q = string.IsNullOrWhiteSpace(Query) ? null : Query.Trim();
+            var prefixes = string.Join(",", new[]
+            {
+                string.IsNullOrWhiteSpace(engineValue) || engineValue == "Other" ? null : engineValue,
+                string.IsNullOrWhiteSpace(statusValue) ? null : statusValue
+            }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+            Status = q is null
+                ? "Loading F95 catalog…"
+                : mode == "creator"
+                    ? $"Searching creator “{q}”…"
+                    : $"Searching “{q}”…";
+            if (!string.IsNullOrWhiteSpace(q))
+                _toasts.Info(Status);
+
+            var pageResult = await _app.Hub.CatalogSearchAsync(
+                query: mode == "title" ? q : null,
+                creator: mode == "creator" ? q : null,
                 page: Page,
                 rows: PageRows,
                 sort: SortBy?.Value ?? "date",
@@ -1332,16 +1453,17 @@ public partial class BrowseViewModel : ViewModelBase
                 tags: FormatTagsQuery(IncludeTags),
                 notags: FormatTagsQuery(ExcludeTags),
                 tagMode: TagMode?.Value ?? "and",
-                prefixes: string.IsNullOrWhiteSpace(engineValue) || engineValue == "Other" ? null : engineValue);
+                prefixes: string.IsNullOrWhiteSpace(prefixes) ? null : prefixes);
             if (gen != _searchGeneration) return;
 
+            var list = pageResult.Items ?? [];
             if (engineValue == "Other")
             {
                 list = list.Where(r =>
                 {
-                    var prefixes = (r.Prefixes ?? []).Select(p => p.ToLowerInvariant()).ToList();
+                    var prefixesLocal = (r.Prefixes ?? []).Select(p => p.ToLowerInvariant()).ToList();
                     string[] known = ["ren'py", "renpy", "unity", "html", "rpgm", "vn"];
-                    return !prefixes.Any(p => known.Contains(p) || p.Replace("'", "") == "renpy");
+                    return !prefixesLocal.Any(p => known.Contains(p) || p.Replace("'", "") == "renpy");
                 }).ToList();
             }
             else if (!string.IsNullOrWhiteSpace(engineValue))
@@ -1349,9 +1471,9 @@ public partial class BrowseViewModel : ViewModelBase
                 var eng = engineValue.ToLowerInvariant();
                 list = list.Where(r =>
                 {
-                    var prefixes = (r.Prefixes ?? []).Select(p => p.ToLowerInvariant()).ToList();
-                    if (prefixes.Count == 0) return true;
-                    return prefixes.Any(p =>
+                    var prefixesLocal = (r.Prefixes ?? []).Select(p => p.ToLowerInvariant()).ToList();
+                    if (prefixesLocal.Count == 0) return true;
+                    return prefixesLocal.Any(p =>
                         p == eng || p.Replace("'", "") == eng.Replace("'", ""));
                 }).ToList();
             }
@@ -1371,16 +1493,31 @@ public partial class BrowseViewModel : ViewModelBase
                 _ = LoadCoverAsync(item);
             }
             _loaded = true;
-            HasMore = list.Count >= PageRows;
+            if (pageResult.Page > 0) Page = pageResult.Page;
+            TotalPages = pageResult.TotalPages;
+            HasMore = pageResult.HasMore || (TotalPages > 0 && Page < TotalPages);
             CanGoPrev = Page > 1;
             CanGoNext = HasMore;
+            PageLabel = TotalPages > 0 ? $"Page {Page} of {TotalPages}" : $"Page {Page}";
             var tagHint = IncludeTags.Count > 0 ? $" · tags: {string.Join(", ", IncludeTags)}" : "";
             var sortHint = SortBy is null ? "" : $" · sort: {SortBy.Label}";
             Status = Results.Count == 0
-                ? "No catalog results. Check F95 login on the hub, or try another search."
-                : $"Page {Page} · {Results.Count}/{PageRows}{tagHint}{sortHint}" + (HasMore ? " · more pages available" : " · last page");
+                ? "No SAM hits — try a shorter title, drop the subtitle, or clear filters."
+                : $"{PageLabel} · {Results.Count}/{pageResult.Rows}{tagHint}{sortHint}"
+                  + (HasMore ? " · more pages available" : " · last page");
+            if (Results.Count == 0 && !string.IsNullOrWhiteSpace(q))
+                _toasts.Warning(Status);
         }
-        catch (Exception ex) { if (gen == _searchGeneration) { Error = ex.Message; _toasts.Error(ex.Message); } }
+        catch (Exception ex)
+        {
+            if (gen == _searchGeneration)
+            {
+                var msg = HubApiException.FriendlyMessage(ex, "Search failed");
+                Error = msg;
+                Status = null;
+                _toasts.Error(msg);
+            }
+        }
         finally { if (gen == _searchGeneration) Busy = false; }
     }
 
@@ -1439,10 +1576,167 @@ public partial class BrowseViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task OpenPreviewAsync(CatalogItemViewModel? item)
+    {
+        if (item is null) return;
+        _previewThreadId = item.Result.ThreadId;
+        _previewResult = item.Result;
+        PreviewTitle = item.Result.Title;
+        PreviewSubtitle = item.Subtitle;
+        PreviewMeta = item.Meta;
+        PreviewDescription = null;
+        PreviewError = null;
+        PreviewCover = item.Cover;
+        PreviewSelectedShot = item.Cover;
+        PreviewInLibrary = item.IsInLibrary;
+        PreviewCanAdd = !item.IsInLibrary;
+        PreviewAddLabel = item.IsInLibrary ? "In library" : "Add to library";
+        PreviewThreadUrl = item.ThreadUrl;
+        PreviewShots.Clear();
+        IsPreviewOpen = true;
+        PreviewBusy = true;
+        Status = $"Loading details · {item.Result.Title}";
+        _toasts.Info(Status);
+
+        // Seed gallery from SAM list screenshots while thread scrape loads.
+        foreach (var url in new[] { item.Result.Cover }.Concat(item.Result.Screenshots ?? [])
+                     .Where(u => !string.IsNullOrWhiteSpace(u))
+                     .Distinct(StringComparer.OrdinalIgnoreCase)
+                     .Take(24))
+        {
+            var shot = new CatalogPreviewShotViewModel { Url = url };
+            PreviewShots.Add(shot);
+            _ = LoadPreviewShotAsync(shot);
+        }
+
+        try
+        {
+            var detail = await _app.Hub.CatalogPreviewAsync(item.Result.ThreadId.ToString());
+            if (_previewThreadId != detail.ThreadId) return;
+            _previewResult = detail;
+            PreviewTitle = detail.Title;
+            PreviewSubtitle = string.Join(" · ", new[] { detail.Creator, detail.Version }.Where(x => !string.IsNullOrWhiteSpace(x)));
+            PreviewDescription = string.IsNullOrWhiteSpace(detail.Description) ? null : detail.Description.Trim();
+            PreviewInLibrary = detail.InLibrary || _libraryThreadIds.Contains(detail.ThreadId);
+            _previewLibraryGameId = detail.LibraryGameId;
+            PreviewCanAdd = !PreviewInLibrary;
+            PreviewAddLabel = PreviewInLibrary ? "In library" : "Add to library";
+            PreviewThreadUrl = detail.Url;
+            var parts = new List<string>();
+            if (detail.Rating > 0) parts.Add($"★ {detail.Rating:0.0}");
+            if (detail.Likes is long likes) parts.Add($"Likes {likes}");
+            if (detail.Views is long views) parts.Add($"Views {views}");
+            if (!string.IsNullOrWhiteSpace(detail.Date)) parts.Add(detail.Date);
+            PreviewMeta = string.Join(" · ", parts);
+
+            var urls = new[] { detail.Cover }.Concat(detail.Screenshots ?? [])
+                .Where(u => !string.IsNullOrWhiteSpace(u))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(40)
+                .ToList();
+            PreviewShots.Clear();
+            foreach (var url in urls)
+            {
+                var shot = new CatalogPreviewShotViewModel { Url = url };
+                PreviewShots.Add(shot);
+                _ = LoadPreviewShotAsync(shot);
+            }
+            Status = $"Details · {detail.Title}";
+        }
+        catch (Exception ex)
+        {
+            var msg = HubApiException.FriendlyMessage(ex, "Couldn't load details");
+            PreviewError = msg;
+            _toasts.Error(msg);
+        }
+        finally
+        {
+            PreviewBusy = false;
+        }
+    }
+
+    private async Task LoadPreviewShotAsync(CatalogPreviewShotViewModel shot)
+    {
+        var bmp = await _media.GetAsync(shot.Url);
+        if (bmp is null) return;
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            shot.Image = bmp;
+            if (PreviewCover is null) PreviewCover = bmp;
+            if (PreviewSelectedShot is null) PreviewSelectedShot = bmp;
+        });
+    }
+
+    [RelayCommand]
+    private void SelectPreviewShot(CatalogPreviewShotViewModel? shot)
+    {
+        if (shot?.Image is null) return;
+        PreviewSelectedShot = shot.Image;
+        foreach (var s in PreviewShots)
+            s.IsSelected = ReferenceEquals(s, shot);
+    }
+
+    [RelayCommand]
+    private void ClosePreview()
+    {
+        IsPreviewOpen = false;
+        PreviewBusy = false;
+        PreviewError = null;
+        _previewThreadId = null;
+        _previewResult = null;
+    }
+
+    [RelayCommand]
+    private void OpenPreviewThread()
+    {
+        if (string.IsNullOrWhiteSpace(PreviewThreadUrl)) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(PreviewThreadUrl) { UseShellExecute = true });
+        }
+        catch (Exception ex) { PreviewError = ex.Message; }
+    }
+
+    [RelayCommand]
+    private async Task AddFromPreviewAsync()
+    {
+        if (!PreviewCanAdd || _previewThreadId is null) return;
+        var tid = _previewThreadId.Value;
+        var title = PreviewTitle;
+        PreviewCanAdd = false;
+        PreviewAddLabel = "Adding…";
+        Status = $"Adding {title}…";
+        _toasts.Info($"Adding · {title}");
+        try
+        {
+            var detail = await _app.Hub.AddGameAsync(tid.ToString());
+            _libraryThreadIds.Add(tid);
+            _previewLibraryGameId = detail.Game.Id;
+            PreviewInLibrary = true;
+            PreviewAddLabel = "In library";
+            foreach (var r in Results.Where(x => x.Result.ThreadId == tid))
+                r.IsInLibrary = true;
+            Status = $"Added {detail.Game.Title}";
+            _toasts.Success($"Added to library · {detail.Game.Title}");
+        }
+        catch (Exception ex)
+        {
+            var msg = HubApiException.FriendlyMessage(ex, "Couldn't add this game");
+            PreviewError = msg;
+            PreviewCanAdd = true;
+            PreviewAddLabel = "Add to library";
+            _toasts.Error(msg);
+        }
+    }
+
+    [RelayCommand]
     private async Task AddAsync(CatalogItemViewModel? item)
     {
-        if (item is null || item.IsInLibrary) return;
-        Busy = true; Error = null;
+        if (item is null || item.IsInLibrary || item.IsAdding) return;
+        item.IsAdding = true;
+        Error = null;
+        Status = $"Adding {item.Result.Title}…";
+        _toasts.Info($"Adding · {item.Result.Title}");
         try
         {
             await _app.Hub.AddGameAsync(item.Result.ThreadId.ToString());
@@ -1451,18 +1745,30 @@ public partial class BrowseViewModel : ViewModelBase
             Status = $"Added {item.Result.Title}";
             _toasts.Success($"Added to library · {item.Result.Title}");
         }
-        catch (Exception ex) { Error = ex.Message; _toasts.Error(ex.Message); }
-        finally { Busy = false; }
+        catch (Exception ex)
+        {
+            var msg = HubApiException.FriendlyMessage(ex, "Couldn't add this game");
+            Error = msg;
+            Status = null;
+            _toasts.Error(msg);
+        }
+        finally
+        {
+            item.IsAdding = false;
+        }
     }
 
     [RelayCommand]
     private async Task AddByUrlAsync()
     {
-        if (string.IsNullOrWhiteSpace(AddByUrl)) return;
+        if (string.IsNullOrWhiteSpace(AddByUrl) || Busy) return;
+        var input = AddByUrl.Trim();
         Busy = true; Error = null;
+        Status = "Adding from F95 URL…";
+        _toasts.Info("Adding game from URL…");
         try
         {
-            var detail = await _app.Hub.AddGameAsync(AddByUrl.Trim());
+            var detail = await _app.Hub.AddGameAsync(input);
             Status = $"Added {detail.Game.Title}";
             _toasts.Success($"Added to library · {detail.Game.Title}");
             if (detail.Game.F95ThreadId is long tid)
@@ -1471,7 +1777,13 @@ public partial class BrowseViewModel : ViewModelBase
                 r.IsInLibrary = true;
             AddByUrl = "";
         }
-        catch (Exception ex) { Error = ex.Message; _toasts.Error(ex.Message); }
+        catch (Exception ex)
+        {
+            var msg = HubApiException.FriendlyMessage(ex, "Couldn't add from that URL");
+            Error = msg;
+            Status = null;
+            _toasts.Error(msg);
+        }
         finally { Busy = false; }
     }
 }
@@ -2752,18 +3064,28 @@ public partial class GameDetailViewModel : ViewModelBase
     [RelayCommand]
     private async Task RefreshAsync()
     {
-        Busy = true; Error = null; GalleryHint = "Refreshing metadata and caching screenshots…";
+        if (Busy) return;
+        Busy = true; Error = null;
+        Status = "Refreshing metadata from F95…";
+        GalleryHint = "Refreshing metadata and caching screenshots…";
+        _toasts.Info($"Refreshing · {Title}");
         try
         {
             await _app.Hub.RefreshGameAsync(GameId);
             await LoadAsync(GameId);
-            Status = "Refreshed";
+            Status = "Metadata refreshed";
             _toasts.Success("Metadata refreshed");
             // Background hub cache may still be writing screenshots — poll briefly.
             if (!HasScreenshots)
                 _ = PollScreenshotsAfterRefreshAsync();
         }
-        catch (Exception ex) { Error = ex.Message; _toasts.Error(ex.Message); }
+        catch (Exception ex)
+        {
+            var msg = HubApiException.FriendlyMessage(ex, "Couldn't refresh metadata");
+            Error = msg;
+            Status = null;
+            _toasts.Error(msg);
+        }
         finally { Busy = false; }
     }
 
@@ -2805,7 +3127,9 @@ public partial class GameDetailViewModel : ViewModelBase
     [RelayCommand]
     private async Task CheckVersionAsync()
     {
+        if (Busy) return;
         Busy = true; Error = null; Status = "Checking F95 version…";
+        _toasts.Info("Checking F95 version…");
         try
         {
             var result = await _app.Hub.CheckVersionAsync(GameId);
@@ -2815,21 +3139,35 @@ public partial class GameDetailViewModel : ViewModelBase
             if (result.UpdateAvailable) _toasts.Warning(Status);
             else _toasts.Success(Status);
         }
-        catch (Exception ex) { Error = ex.Message; Status = null; _toasts.Error(ex.Message); }
+        catch (Exception ex)
+        {
+            var msg = HubApiException.FriendlyMessage(ex, "Couldn't check version");
+            Error = msg;
+            Status = null;
+            _toasts.Error(msg);
+        }
         finally { Busy = false; }
     }
 
     [RelayCommand]
     private async Task DeleteFromLibraryAsync()
     {
+        if (Busy) return;
         Busy = true; Error = null; Status = "Removing from hub library…";
         try
         {
             await _app.Hub.DeleteGameAsync(GameId);
             Status = "Removed from library.";
+            _toasts.Success($"Removed · {Title}");
             _back();
         }
-        catch (Exception ex) { Error = ex.Message; Status = null; }
+        catch (Exception ex)
+        {
+            var msg = HubApiException.FriendlyMessage(ex, "Couldn't remove from library");
+            Error = msg;
+            Status = null;
+            _toasts.Error(msg);
+        }
         finally { Busy = false; }
     }
 

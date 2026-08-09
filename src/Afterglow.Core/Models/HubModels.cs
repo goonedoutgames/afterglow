@@ -71,6 +71,15 @@ public sealed class GameDetail
     public List<GamePatch> Patches { get; set; } = [];
 }
 
+public sealed class CatalogPage
+{
+    public List<F95SearchResult> Items { get; set; } = [];
+    public int Page { get; set; }
+    public int TotalPages { get; set; }
+    public int Rows { get; set; }
+    public bool HasMore { get; set; }
+}
+
 public sealed class F95SearchResult
 {
     public long ThreadId { get; set; }
@@ -87,6 +96,10 @@ public sealed class F95SearchResult
     public long? Views { get; set; }
     public string Url { get; set; } = "";
     public string Date { get; set; } = "";
+    /// <summary>Present on catalog preview responses (thread overview).</summary>
+    public string? Description { get; set; }
+    public bool InLibrary { get; set; }
+    public long? LibraryGameId { get; set; }
 }
 
 public sealed class LibraryTag

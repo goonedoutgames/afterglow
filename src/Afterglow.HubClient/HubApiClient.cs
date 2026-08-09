@@ -127,7 +127,7 @@ public sealed class HubApiClient : IDisposable
         return await ReadResponseAsync<GameDetail>(response, cancellationToken);
     }
 
-    public Task<List<F95SearchResult>> CatalogSearchAsync(
+    public Task<CatalogPage> CatalogSearchAsync(
         string? query = null,
         int? page = null,
         int? rows = null,
@@ -139,7 +139,7 @@ public sealed class HubApiClient : IDisposable
         string? tagMode = null,
         string? prefixes = null,
         CancellationToken cancellationToken = default) =>
-        SendAsync<object, List<F95SearchResult>>(HttpMethod.Get, WithQuery(
+        SendAsync<object, CatalogPage>(HttpMethod.Get, WithQuery(
             "api/v1/catalog/search",
             ("q", query),
             ("creator", creator),
@@ -151,6 +151,10 @@ public sealed class HubApiClient : IDisposable
             ("notags", notags),
             ("tag_mode", tagMode),
             ("prefixes", prefixes)), null, cancellationToken);
+
+    public Task<F95SearchResult> CatalogPreviewAsync(string input, CancellationToken cancellationToken = default) =>
+        SendAsync<object, F95SearchResult>(HttpMethod.Get,
+            WithQuery("api/v1/catalog/preview", ("input", input)), null, cancellationToken);
 
     public Uri ResolveUri(string url)
     {
@@ -348,9 +352,32 @@ public sealed class HubApiClient : IDisposable
 
     private static async Task ThrowHubErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
-        var message = await response.Content.ReadAsStringAsync(cancellationToken);
-        try { message = JsonSerializer.Deserialize<HubError>(message, JsonOptions)?.Error ?? message; } catch (JsonException) { }
-        throw new HubApiException(response.StatusCode, string.IsNullOrWhiteSpace(message) ? response.ReasonPhrase ?? "Hub request failed." : message);
+        var raw = await response.Content.ReadAsStringAsync(cancellationToken);
+        var message = raw;
+        try
+        {
+            message = JsonSerializer.Deserialize<HubError>(raw, JsonOptions)?.Error ?? raw;
+        }
+        catch (JsonException) { /* keep raw */ }
+
+        message = (message ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(message)
+            || message.StartsWith('<')
+            || message.Contains("<html", StringComparison.OrdinalIgnoreCase))
+        {
+            message = response.StatusCode switch
+            {
+                System.Net.HttpStatusCode.BadGateway or System.Net.HttpStatusCode.GatewayTimeout
+                    => "Hub timed out or crashed while contacting F95Zone. Check hub logs and F95 login, then try again.",
+                System.Net.HttpStatusCode.ServiceUnavailable
+                    => "Hub is temporarily unavailable. Try again in a moment.",
+                System.Net.HttpStatusCode.Unauthorized
+                    => "Not authorized — check the hub app password in Settings.",
+                _ => response.ReasonPhrase ?? $"Hub request failed ({(int)response.StatusCode})."
+            };
+        }
+
+        throw new HubApiException(response.StatusCode, message);
     }
 
     private static string WithQuery(string path, params (string Name, string? Value)[] values)
@@ -374,4 +401,26 @@ internal sealed class HealthResponse
 public sealed class HubApiException(System.Net.HttpStatusCode statusCode, string message) : Exception(message)
 {
     public System.Net.HttpStatusCode StatusCode { get; } = statusCode;
+
+    /// <summary>User-facing message for hub/F95 failures (HTML 502 bodies, timeouts, etc.).</summary>
+    public static string FriendlyMessage(Exception ex, string fallback)
+    {
+        if (ex is HubApiException hub)
+        {
+            var body = (hub.Message ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(body)
+                || body.StartsWith('<')
+                || body.Contains("Bad Gateway", StringComparison.OrdinalIgnoreCase)
+                || body.Contains("502", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"{fallback}. The hub may have timed out or crashed while talking to F95 — check F95 login and hub logs, then try again.";
+            }
+            return body;
+        }
+
+        if (ex is TaskCanceledException or OperationCanceledException or TimeoutException)
+            return $"{fallback}. The request timed out — F95 can be slow; try again in a moment.";
+
+        return string.IsNullOrWhiteSpace(ex.Message) ? fallback : ex.Message;
+    }
 }

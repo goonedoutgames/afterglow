@@ -13,6 +13,8 @@ The Hub REST contract lives in the sibling repo:
 
 Before adding Hub client methods or changing request/response models in `Afterglow.HubClient` / `Afterglow.Core.Models`, read that OpenAPI file.
 
+Catalog browse/search returns `CatalogPage` (`items`, `page`, `total_pages`, `rows`, `has_more`), not a bare array. Preview uses `GET /api/v1/catalog/preview`.
+
 Screenshot galleries: prefer `cached_url`; uncached items still appear via `full_url`. Refresh may take up to ~120s while the hub caches images/GIFs.
 
 Notable game tracking fields (`PATCH /api/v1/games/{id}`):

@@ -5,6 +5,7 @@
              xmlns:ctrl="using:Afterglow.Controls"
              x:Class="Afterglow.Views.BrowseView"
              x:DataType="vm:BrowseViewModel">
+  <Panel>
   <DockPanel>
     <!-- Right sidebar: search / sort / filters / tags -->
     <Border DockPanel.Dock="Right" Classes="glass" Width="300" Margin="4,8,8,8" Padding="12,14,8,14" CornerRadius="16"
@@ -16,7 +17,9 @@
           <TextBlock Text="Browse" Classes="field-label" Margin="0" FontSize="15" />
 
           <StackPanel Spacing="6">
-            <TextBox PlaceholderText="Search title…" Text="{Binding Query}" MinHeight="36" />
+            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding SearchModeChoices}"
+                      SelectedItem="{Binding SearchMode}" DisplayMemberBinding="{Binding Label}" />
+            <TextBox PlaceholderText="Search…" Text="{Binding Query}" MinHeight="36" />
             <Button Classes="accent" Content="Search" Command="{Binding SearchCommand}"
                     IsEnabled="{Binding !Busy}" HorizontalAlignment="Stretch" />
           </StackPanel>
@@ -31,6 +34,9 @@
             <TextBlock Text="Engine" Classes="caption" Margin="0,4,0,0" />
             <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding EngineChoices}"
                       SelectedItem="{Binding Engine}" DisplayMemberBinding="{Binding Label}" />
+            <TextBlock Text="Status" Classes="caption" Margin="0,4,0,0" />
+            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding StatusChoices}"
+                      SelectedItem="{Binding StatusFilter}" DisplayMemberBinding="{Binding Label}" />
           </StackPanel>
 
           <StackPanel Spacing="6">
@@ -131,7 +137,7 @@
                   IsEnabled="{Binding CanGoPrev}" />
           <TextBlock Grid.Column="1" Text="{Binding Status}" Classes="muted" TextTrimming="CharacterEllipsis"
                      VerticalAlignment="Center" />
-          <TextBlock Grid.Column="2" Text="{Binding Page, StringFormat=Page {0}}" VerticalAlignment="Center"
+          <TextBlock Grid.Column="2" Text="{Binding PageLabel}" VerticalAlignment="Center"
                      Classes="muted" FontWeight="SemiBold" />
           <Button Grid.Column="3" Classes="ghost" Content="Next" Command="{Binding NextPageCommand}"
                   IsEnabled="{Binding CanGoNext}" />
@@ -144,7 +150,7 @@
         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
           <Button Classes="ghost" Content="Prev" Command="{Binding PrevPageCommand}"
                   IsEnabled="{Binding CanGoPrev}" />
-          <TextBlock Grid.Column="1" Text="{Binding Page, StringFormat=Page {0}}" HorizontalAlignment="Center"
+          <TextBlock Grid.Column="1" Text="{Binding PageLabel}" HorizontalAlignment="Center"
                      VerticalAlignment="Center" Classes="muted" />
           <Button Grid.Column="2" Classes="ghost" Content="Next" Command="{Binding NextPageCommand}"
                   IsEnabled="{Binding CanGoNext}" />
@@ -160,7 +166,7 @@
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:CatalogItemViewModel">
-              <Border Classes="game-card-host" Width="220" Height="400"
+              <Border Classes="game-card-host" Width="220" Height="420"
                       Tag="{Binding}">
                 <Border Classes="game-card">
                   <Border Classes="game-card-face">
@@ -169,16 +175,19 @@
                         <StackPanel Spacing="6">
                           <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="2" TextWrapping="Wrap" />
                           <TextBlock Text="{Binding Subtitle}" Classes="caption" TextTrimming="CharacterEllipsis" />
-                          <TextBlock Text="{Binding Meta}" Classes="caption" />
+                          <TextBlock Text="{Binding Meta}" Classes="caption" TextWrapping="Wrap" MaxLines="2" />
                           <ctrl:TagBadges Tags="{Binding Tags}" Limit="4" Size="sm" Expandable="True" Clickable="False" />
-                          <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
-                            <Button Classes="accent" Content="{Binding AddButtonLabel}"
-                                    Command="{Binding $parent[UserControl].((vm:BrowseViewModel)DataContext).AddCommand}"
-                                    CommandParameter="{Binding}"
-                                    IsEnabled="{Binding !IsInLibrary}" />
+                          <Grid ColumnDefinitions="*,*" ColumnSpacing="6" RowDefinitions="Auto,Auto" RowSpacing="6">
+                            <Button Classes="ghost" Content="Details"
+                                    Command="{Binding $parent[UserControl].((vm:BrowseViewModel)DataContext).OpenPreviewCommand}"
+                                    CommandParameter="{Binding}" />
                             <Button Grid.Column="1" Classes="ghost" Content="F95"
                                     Command="{Binding $parent[UserControl].((vm:BrowseViewModel)DataContext).OpenThreadCommand}"
                                     CommandParameter="{Binding}" />
+                            <Button Grid.Row="1" Grid.ColumnSpan="2" Classes="accent" Content="{Binding AddButtonLabel}"
+                                    Command="{Binding $parent[UserControl].((vm:BrowseViewModel)DataContext).AddCommand}"
+                                    CommandParameter="{Binding}"
+                                    IsEnabled="{Binding CanAdd}" />
                           </Grid>
                         </StackPanel>
                       </Border>
@@ -197,4 +206,70 @@
       </ScrollViewer>
     </DockPanel>
   </DockPanel>
+
+  <!-- Catalog preview overlay -->
+  <Panel IsVisible="{Binding IsPreviewOpen}" ZIndex="40">
+    <Border Background="#CC0B0F14" PointerPressed="PreviewBackdrop_PointerPressed" />
+    <Border Classes="glass" Width="520" MaxWidth="920" HorizontalAlignment="Right"
+            Margin="0,8,8,8" Padding="16" CornerRadius="16" ClipToBounds="True">
+      <DockPanel>
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+          <StackPanel Spacing="2">
+            <TextBlock Text="{Binding PreviewTitle}" FontSize="18" FontWeight="SemiBold"
+                       TextWrapping="Wrap" />
+            <TextBlock Text="{Binding PreviewSubtitle}" Classes="caption" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding PreviewMeta}" Classes="muted" TextWrapping="Wrap" />
+          </StackPanel>
+          <Button Grid.Column="1" Classes="ghost" Content="Close" Command="{Binding ClosePreviewCommand}"
+                  VerticalAlignment="Top" />
+        </Grid>
+
+        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,12,0,0">
+          <Button Classes="accent" Content="{Binding PreviewAddLabel}"
+                  Command="{Binding AddFromPreviewCommand}"
+                  IsEnabled="{Binding PreviewCanAdd}" />
+          <Button Grid.Column="1" Classes="ghost" Content="F95" Command="{Binding OpenPreviewThreadCommand}" />
+          <Button Grid.Column="2" Classes="ghost" Content="Close" Command="{Binding ClosePreviewCommand}" />
+        </Grid>
+
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <StackPanel Spacing="12">
+            <TextBlock Text="{Binding PreviewError}" Foreground="#E35D6A" TextWrapping="Wrap"
+                       IsVisible="{Binding PreviewError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <TextBlock Text="Fetching overview and gallery from F95…" Classes="caption"
+                       IsVisible="{Binding PreviewBusy}" />
+
+            <Border Height="220" CornerRadius="10" ClipToBounds="True" Background="#1A222E">
+              <Image Source="{Binding PreviewSelectedShot}" Stretch="Uniform"
+                     IsVisible="{Binding PreviewSelectedShot, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            </Border>
+
+            <ItemsControl ItemsSource="{Binding PreviewShots}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:CatalogPreviewShotViewModel">
+                  <Border Width="72" Height="48" Margin="0,0,6,6" CornerRadius="6" ClipToBounds="True"
+                          Background="#1A222E" Cursor="Hand"
+                          PointerPressed="PreviewShot_PointerPressed" Tag="{Binding}">
+                    <Image Source="{Binding Image}" Stretch="UniformToFill"
+                           IsVisible="{Binding Image, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock Text="Overview" Classes="field-label" Margin="0"
+                       IsVisible="{Binding PreviewDescription, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <TextBlock Text="{Binding PreviewDescription}" TextWrapping="Wrap" LineHeight="20"
+                       IsVisible="{Binding PreviewDescription, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+  </Panel>
+  </Panel>
 </UserControl>
