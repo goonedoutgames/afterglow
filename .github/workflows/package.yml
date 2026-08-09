@@ -108,7 +108,11 @@ jobs:
         run: |
           $v = "${{ github.ref_name }}"
           if ($v -match '^v(.+)$') { $v = $Matches[1] }
-          elseif ($v -eq "main" -or $v -like "refs/*") { $v = "0.0.0-ci.${{ github.run_number }}" }
+          else { $v = "0.0.0-ci.${{ github.run_number }}" }
+          # NuGet/AssemblyVersion cannot contain '/' (PR refs like 42/merge).
+          if ($v -notmatch '^[0-9A-Za-z][0-9A-Za-z.\-+]*$') {
+            $v = "0.0.0-ci.${{ github.run_number }}"
+          }
           "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "AppVersion=$v"
 
@@ -164,7 +168,8 @@ jobs:
             -Runtime win-x64 `
             -Framework net8.0-windows `
             -AvnHubExe "${{ steps.hub.outputs.path }}" `
-            -Output publish/windows
+            -Output publish/windows `
+            -AppVersion "${{ steps.version.outputs.version }}"
 
       - name: Sidecar provenance
         shell: pwsh

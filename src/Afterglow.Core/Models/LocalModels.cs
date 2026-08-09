@@ -26,6 +26,8 @@ public sealed class UiPreferences
     public bool BrowseHoverPreviewsEnabled { get; set; } = true;
     /// <summary>Hover slideshow interval in milliseconds (400–10000).</summary>
     public int HoverPreviewIntervalMs { get; set; } = 1800;
+    /// <summary>Semver (no leading v) the user chose to ignore for update prompts.</summary>
+    public string? IgnoredUpdateVersion { get; set; }
 }
 
 public sealed class LocalInstall

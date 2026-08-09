@@ -5,271 +5,325 @@
              xmlns:ctrl="using:Afterglow.Controls"
              x:Class="Afterglow.Views.BrowseView"
              x:DataType="vm:BrowseViewModel">
+  <UserControl.Styles>
+    <Style Selector="Border.shot-thumb">
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="2" />
+    </Style>
+    <Style Selector="Border.shot-thumb.is-selected">
+      <Setter Property="BorderBrush" Value="#F53D9CF0" />
+    </Style>
+  </UserControl.Styles>
   <Panel>
-  <DockPanel>
-    <!-- Right sidebar: search / sort / filters / tags -->
-    <Border DockPanel.Dock="Right" Classes="glass" Width="300" Margin="4,8,8,8" Padding="12,14,8,14" CornerRadius="16"
-            ClipToBounds="True">
-      <ScrollViewer HorizontalScrollBarVisibility="Disabled"
-                    VerticalScrollBarVisibility="Auto"
-                    Padding="2,0,10,0">
-        <StackPanel Spacing="14" Margin="2,0,4,0">
-          <TextBlock Text="Browse" Classes="field-label" Margin="0" FontSize="15" />
+    <!-- Catalog grid (remembered when switching tabs) -->
+    <DockPanel IsVisible="{Binding !IsPreviewOpen}">
+      <Border DockPanel.Dock="Right" Classes="glass" Width="300" Margin="4,8,8,8" Padding="12,14,8,14" CornerRadius="16"
+              ClipToBounds="True">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto"
+                      Padding="2,0,10,0">
+          <StackPanel Spacing="14" Margin="2,0,4,0">
+            <TextBlock Text="Browse" Classes="field-label" Margin="0" FontSize="15" />
 
-          <StackPanel Spacing="6">
-            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding SearchModeChoices}"
-                      SelectedItem="{Binding SearchMode}" DisplayMemberBinding="{Binding Label}" />
-            <TextBox PlaceholderText="Search…" Text="{Binding Query}" MinHeight="36" />
-            <Button Classes="accent" Content="Search" Command="{Binding SearchCommand}"
-                    IsEnabled="{Binding !Busy}" HorizontalAlignment="Stretch" />
-          </StackPanel>
+            <StackPanel Spacing="6">
+              <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding SearchModeChoices}"
+                        SelectedItem="{Binding SearchMode}" DisplayMemberBinding="{Binding Label}" />
+              <TextBox PlaceholderText="Search…" Text="{Binding Query}" MinHeight="36" />
+              <Button Classes="accent" Content="Search" Command="{Binding SearchCommand}"
+                      IsEnabled="{Binding CanSearch}" HorizontalAlignment="Stretch" />
+            </StackPanel>
 
-          <StackPanel Spacing="6">
-            <TextBlock Text="Sort" Classes="field-label" Margin="0" />
-            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding SortChoices}"
-                      SelectedItem="{Binding SortBy}" DisplayMemberBinding="{Binding Label}" />
-            <TextBlock Text="Updated" Classes="caption" Margin="0,4,0,0" />
-            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding DateChoices}"
-                      SelectedItem="{Binding DatePreset}" DisplayMemberBinding="{Binding Label}" />
-            <TextBlock Text="Engine" Classes="caption" Margin="0,4,0,0" />
-            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding EngineChoices}"
-                      SelectedItem="{Binding Engine}" DisplayMemberBinding="{Binding Label}" />
-            <TextBlock Text="Status" Classes="caption" Margin="0,4,0,0" />
-            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding StatusChoices}"
-                      SelectedItem="{Binding StatusFilter}" DisplayMemberBinding="{Binding Label}" />
-          </StackPanel>
+            <StackPanel Spacing="6">
+              <TextBlock Text="Sort" Classes="field-label" Margin="0" />
+              <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding SortChoices}"
+                        SelectedItem="{Binding SortBy}" DisplayMemberBinding="{Binding Label}" />
+              <TextBlock Text="Updated" Classes="caption" Margin="0,4,0,0" />
+              <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding DateChoices}"
+                        SelectedItem="{Binding DatePreset}" DisplayMemberBinding="{Binding Label}" />
+              <TextBlock Text="Engine" Classes="caption" Margin="0,4,0,0" />
+              <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding EngineChoices}"
+                        SelectedItem="{Binding Engine}" DisplayMemberBinding="{Binding Label}" />
+              <TextBlock Text="Status" Classes="caption" Margin="0,4,0,0" />
+              <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding StatusChoices}"
+                        SelectedItem="{Binding StatusFilter}" DisplayMemberBinding="{Binding Label}" />
+            </StackPanel>
 
-          <StackPanel Spacing="6">
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Text="Include tags" Classes="field-label" Margin="0" VerticalAlignment="Center" />
-              <Button Grid.Column="1" Classes="ghost" Content="Clear" Padding="8,4" MinHeight="28"
-                      Command="{Binding ClearIncludeTagsCommand}" IsVisible="{Binding HasIncludeTags}" />
-            </Grid>
-            <TextBlock Classes="caption" TextWrapping="Wrap"
-                       Text="F95 tags resolve to numeric IDs. Works with sort, date, and pagination (90/page)." />
-            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding TagModeOptions}"
-                      SelectedItem="{Binding TagMode}" DisplayMemberBinding="{Binding Label}" />
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-              <TextBox PlaceholderText="Filter / add include…" Text="{Binding TagDraft}" MinHeight="36" />
-              <Button Grid.Column="1" Classes="ghost" Content="Add" Command="{Binding AddIncludeTagCommand}" />
-            </Grid>
-            <ItemsControl ItemsSource="{Binding IncludeTags}" IsVisible="{Binding HasIncludeTags}">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <WrapPanel />
-                </ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="x:String">
-                  <Border Classes="tag-filter-chip is-selected"
-                          PointerPressed="IncludeTag_PointerPressed" Tag="{Binding}">
-                    <TextBlock Text="{Binding}" />
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <Border Classes="glass-chip" Padding="8,8" MaxHeight="180">
-              <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                <StackPanel Spacing="6">
-                  <TextBlock Text="F95 tags" Classes="caption" />
-                  <ItemsControl ItemsSource="{Binding CatalogTagSuggestions}">
-                    <ItemsControl.ItemsPanel>
-                      <ItemsPanelTemplate>
-                        <WrapPanel />
-                      </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate x:DataType="core:CatalogTag">
-                        <Border Classes="tag-filter-chip"
-                                PointerPressed="CatalogTag_PointerPressed" Tag="{Binding}">
-                          <TextBlock Text="{Binding Name}" />
-                        </Border>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                  <TextBlock Classes="caption" Text="No matching tags."
-                             IsVisible="{Binding !CatalogTagSuggestions.Count}" />
-                </StackPanel>
-              </ScrollViewer>
-            </Border>
-          </StackPanel>
-
-          <StackPanel Spacing="6">
-            <TextBlock Text="Exclude tags" Classes="field-label" Margin="0" />
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-              <TextBox PlaceholderText="Add exclude tag…" Text="{Binding ExcludeTagDraft}" MinHeight="36" />
-              <Button Grid.Column="1" Classes="ghost" Content="Add" Command="{Binding AddExcludeTagCommand}" />
-            </Grid>
-            <ItemsControl ItemsSource="{Binding ExcludeTags}" IsVisible="{Binding HasExcludeTags}">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <WrapPanel />
-                </ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="x:String">
-                  <Border Classes="tag-filter-chip"
-                          PointerPressed="ExcludeTag_PointerPressed" Tag="{Binding}">
-                    <TextBlock Text="{Binding}" />
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
-
-          <StackPanel Spacing="6">
-            <TextBlock Text="Add to library" Classes="field-label" Margin="0" />
-            <TextBox PlaceholderText="F95 URL or thread id…" Text="{Binding AddByUrl}" MinHeight="36" />
-            <Button Classes="ghost" Content="Add URL" Command="{Binding AddByUrlCommand}"
-                    IsEnabled="{Binding !Busy}" HorizontalAlignment="Stretch" />
-          </StackPanel>
-
-          <TextBlock Text="{Binding Status}" Classes="caption" TextWrapping="Wrap" />
-          <TextBlock Text="{Binding Error}" Foreground="#E35D6A" TextWrapping="Wrap" />
-        </StackPanel>
-      </ScrollViewer>
-    </Border>
-
-    <DockPanel Margin="4,8,0,8">
-      <Border DockPanel.Dock="Top" Classes="glass" Padding="10,8" Margin="2,0,4,8" CornerRadius="12">
-        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
-          <Button Classes="ghost" Content="Prev" Command="{Binding PrevPageCommand}"
-                  IsEnabled="{Binding CanGoPrev}" />
-          <TextBlock Grid.Column="1" Text="{Binding Status}" Classes="muted" TextTrimming="CharacterEllipsis"
-                     VerticalAlignment="Center" />
-          <TextBlock Grid.Column="2" Text="{Binding PageLabel}" VerticalAlignment="Center"
-                     Classes="muted" FontWeight="SemiBold" />
-          <Button Grid.Column="3" Classes="ghost" Content="Next" Command="{Binding NextPageCommand}"
-                  IsEnabled="{Binding CanGoNext}" />
-          <Button Grid.Column="4" Classes="accent" Content="Search" Command="{Binding SearchCommand}"
-                  IsEnabled="{Binding !Busy}" />
-        </Grid>
-      </Border>
-
-      <Border DockPanel.Dock="Bottom" Classes="glass" Padding="10,8" Margin="2,8,4,0" CornerRadius="12">
-        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-          <Button Classes="ghost" Content="Prev" Command="{Binding PrevPageCommand}"
-                  IsEnabled="{Binding CanGoPrev}" />
-          <TextBlock Grid.Column="1" Text="{Binding PageLabel}" HorizontalAlignment="Center"
-                     VerticalAlignment="Center" Classes="muted" />
-          <Button Grid.Column="2" Classes="ghost" Content="Next" Command="{Binding NextPageCommand}"
-                  IsEnabled="{Binding CanGoNext}" />
-        </Grid>
-      </Border>
-
-      <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="6,4,6,8">
-        <ItemsControl ItemsSource="{Binding Results}">
-          <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate>
-              <WrapPanel />
-            </ItemsPanelTemplate>
-          </ItemsControl.ItemsPanel>
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:CatalogItemViewModel">
-              <Border Classes="game-card-host" Width="220" Height="420"
-                      Tag="{Binding}">
-                <Border Classes="game-card">
-                  <Border Classes="game-card-face">
-                    <DockPanel>
-                      <Border DockPanel.Dock="Bottom" Classes="game-card-meta" Padding="10,8">
-                        <StackPanel Spacing="6">
-                          <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="2" TextWrapping="Wrap" />
-                          <TextBlock Text="{Binding Subtitle}" Classes="caption" TextTrimming="CharacterEllipsis" />
-                          <TextBlock Text="{Binding Meta}" Classes="caption" TextWrapping="Wrap" MaxLines="2" />
-                          <ctrl:TagBadges Tags="{Binding Tags}" Limit="4" Size="sm" Expandable="True" Clickable="False" />
-                          <Grid ColumnDefinitions="*,*" ColumnSpacing="6" RowDefinitions="Auto,Auto" RowSpacing="6">
-                            <Button Classes="ghost" Content="Details"
-                                    Command="{Binding $parent[UserControl].((vm:BrowseViewModel)DataContext).OpenPreviewCommand}"
-                                    CommandParameter="{Binding}" />
-                            <Button Grid.Column="1" Classes="ghost" Content="F95"
-                                    Command="{Binding $parent[UserControl].((vm:BrowseViewModel)DataContext).OpenThreadCommand}"
-                                    CommandParameter="{Binding}" />
-                            <Button Grid.Row="1" Grid.ColumnSpan="2" Classes="accent" Content="{Binding AddButtonLabel}"
-                                    Command="{Binding $parent[UserControl].((vm:BrowseViewModel)DataContext).AddCommand}"
-                                    CommandParameter="{Binding}"
-                                    IsEnabled="{Binding CanAdd}" />
-                          </Grid>
-                        </StackPanel>
-                      </Border>
-                      <Panel>
-                        <Border Classes="cover-fallback" />
-                        <Image Source="{Binding Cover}" Stretch="UniformToFill"
-                               IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                      </Panel>
-                    </DockPanel>
-                  </Border>
-                </Border>
+            <StackPanel Spacing="6">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="Include tags" Classes="field-label" Margin="0" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Classes="ghost" Content="Clear" Padding="8,4" MinHeight="28"
+                        Command="{Binding ClearIncludeTagsCommand}" IsVisible="{Binding HasIncludeTags}" />
+              </Grid>
+              <TextBlock Classes="caption" TextWrapping="Wrap"
+                         Text="F95 tags resolve to numeric IDs. Works with sort, date, and pagination (90/page)." />
+              <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding TagModeOptions}"
+                        SelectedItem="{Binding TagMode}" DisplayMemberBinding="{Binding Label}" />
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                <TextBox PlaceholderText="Filter / add include…" Text="{Binding TagDraft}" MinHeight="36" />
+                <Button Grid.Column="1" Classes="ghost" Content="Add" Command="{Binding AddIncludeTagCommand}" />
+              </Grid>
+              <ItemsControl ItemsSource="{Binding IncludeTags}" IsVisible="{Binding HasIncludeTags}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <Border Classes="tag-filter-chip is-selected"
+                            PointerPressed="IncludeTag_PointerPressed" Tag="{Binding}">
+                      <TextBlock Text="{Binding}" />
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <Border Classes="glass-chip" Padding="8,8" MaxHeight="180">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                  <StackPanel Spacing="6">
+                    <TextBlock Text="F95 tags" Classes="caption" />
+                    <ItemsControl ItemsSource="{Binding CatalogTagSuggestions}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel />
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="core:CatalogTag">
+                          <Border Classes="tag-filter-chip"
+                                  PointerPressed="CatalogTag_PointerPressed" Tag="{Binding}">
+                            <TextBlock Text="{Binding Name}" />
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Classes="caption" Text="No matching tags."
+                               IsVisible="{Binding !CatalogTagSuggestions.Count}" />
+                  </StackPanel>
+                </ScrollViewer>
               </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </ScrollViewer>
-    </DockPanel>
-  </DockPanel>
+            </StackPanel>
 
-  <!-- Catalog preview overlay -->
-  <Panel IsVisible="{Binding IsPreviewOpen}" ZIndex="40">
-    <Border Background="#CC0B0F14" PointerPressed="PreviewBackdrop_PointerPressed" />
-    <Border Classes="glass" Width="520" MaxWidth="920" HorizontalAlignment="Right"
-            Margin="0,8,8,8" Padding="16" CornerRadius="16" ClipToBounds="True">
-      <DockPanel>
-        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
-          <StackPanel Spacing="2">
-            <TextBlock Text="{Binding PreviewTitle}" FontSize="18" FontWeight="SemiBold"
-                       TextWrapping="Wrap" />
-            <TextBlock Text="{Binding PreviewSubtitle}" Classes="caption" TextWrapping="Wrap" />
-            <TextBlock Text="{Binding PreviewMeta}" Classes="muted" TextWrapping="Wrap" />
-          </StackPanel>
-          <Button Grid.Column="1" Classes="ghost" Content="Close" Command="{Binding ClosePreviewCommand}"
-                  VerticalAlignment="Top" />
-        </Grid>
+            <StackPanel Spacing="6">
+              <TextBlock Text="Exclude tags" Classes="field-label" Margin="0" />
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                <TextBox PlaceholderText="Add exclude tag…" Text="{Binding ExcludeTagDraft}" MinHeight="36" />
+                <Button Grid.Column="1" Classes="ghost" Content="Add" Command="{Binding AddExcludeTagCommand}" />
+              </Grid>
+              <ItemsControl ItemsSource="{Binding ExcludeTags}" IsVisible="{Binding HasExcludeTags}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <Border Classes="tag-filter-chip"
+                            PointerPressed="ExcludeTag_PointerPressed" Tag="{Binding}">
+                      <TextBlock Text="{Binding}" />
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
 
-        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,12,0,0">
-          <Button Classes="accent" Content="{Binding PreviewAddLabel}"
-                  Command="{Binding AddFromPreviewCommand}"
-                  IsEnabled="{Binding PreviewCanAdd}" />
-          <Button Grid.Column="1" Classes="ghost" Content="F95" Command="{Binding OpenPreviewThreadCommand}" />
-          <Button Grid.Column="2" Classes="ghost" Content="Close" Command="{Binding ClosePreviewCommand}" />
-        </Grid>
+            <StackPanel Spacing="6">
+              <TextBlock Text="Add to library" Classes="field-label" Margin="0" />
+              <TextBox PlaceholderText="F95 URL or thread id…" Text="{Binding AddByUrl}" MinHeight="36" />
+              <Button Classes="ghost" Content="Add URL" Command="{Binding AddByUrlCommand}"
+                      IsEnabled="{Binding CanSearch}" HorizontalAlignment="Stretch" />
+            </StackPanel>
 
-        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-          <StackPanel Spacing="12">
-            <TextBlock Text="{Binding PreviewError}" Foreground="#E35D6A" TextWrapping="Wrap"
-                       IsVisible="{Binding PreviewError, Converter={x:Static ObjectConverters.IsNotNull}}" />
-            <TextBlock Text="Fetching overview and gallery from F95…" Classes="caption"
-                       IsVisible="{Binding PreviewBusy}" />
-
-            <Border Height="220" CornerRadius="10" ClipToBounds="True" Background="#1A222E">
-              <Image Source="{Binding PreviewSelectedShot}" Stretch="Uniform"
-                     IsVisible="{Binding PreviewSelectedShot, Converter={x:Static ObjectConverters.IsNotNull}}" />
-            </Border>
-
-            <ItemsControl ItemsSource="{Binding PreviewShots}">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <WrapPanel />
-                </ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:CatalogPreviewShotViewModel">
-                  <Border Width="72" Height="48" Margin="0,0,6,6" CornerRadius="6" ClipToBounds="True"
-                          Background="#1A222E" Cursor="Hand"
-                          PointerPressed="PreviewShot_PointerPressed" Tag="{Binding}">
-                    <Image Source="{Binding Image}" Stretch="UniformToFill"
-                           IsVisible="{Binding Image, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <TextBlock Text="Overview" Classes="field-label" Margin="0"
-                       IsVisible="{Binding PreviewDescription, Converter={x:Static ObjectConverters.IsNotNull}}" />
-            <TextBlock Text="{Binding PreviewDescription}" TextWrapping="Wrap" LineHeight="20"
-                       IsVisible="{Binding PreviewDescription, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <TextBlock Text="{Binding Status}" Classes="caption" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Error}" Foreground="#E35D6A" TextWrapping="Wrap" />
           </StackPanel>
         </ScrollViewer>
+      </Border>
+
+      <DockPanel Margin="4,8,0,8">
+        <Border DockPanel.Dock="Top" Classes="glass" Padding="10,8" Margin="2,0,4,8" CornerRadius="12">
+          <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
+            <Button Classes="ghost" Content="Prev" Command="{Binding PrevPageCommand}"
+                    IsEnabled="{Binding CanGoPrev}" />
+            <TextBlock Grid.Column="1" Text="{Binding Status}" Classes="muted" TextTrimming="CharacterEllipsis"
+                       VerticalAlignment="Center" />
+            <TextBlock Grid.Column="2" Text="{Binding PageLabel}" VerticalAlignment="Center"
+                       Classes="muted" FontWeight="SemiBold" />
+            <Button Grid.Column="3" Classes="ghost" Content="Next" Command="{Binding NextPageCommand}"
+                    IsEnabled="{Binding CanGoNext}" />
+            <Button Grid.Column="4" Classes="accent" Content="Search" Command="{Binding SearchCommand}"
+                    IsEnabled="{Binding CanSearch}" />
+          </Grid>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom" Classes="glass" Padding="10,8" Margin="2,8,4,0" CornerRadius="12">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+            <Button Classes="ghost" Content="Prev" Command="{Binding PrevPageCommand}"
+                    IsEnabled="{Binding CanGoPrev}" />
+            <TextBlock Grid.Column="1" Text="{Binding PageLabel}" HorizontalAlignment="Center"
+                       VerticalAlignment="Center" Classes="muted" />
+            <Button Grid.Column="2" Classes="ghost" Content="Next" Command="{Binding NextPageCommand}"
+                    IsEnabled="{Binding CanGoNext}" />
+          </Grid>
+        </Border>
+
+        <ScrollViewer Name="ResultsScroller"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Padding="6,4,6,8"
+                      ScrollChanged="ResultsScroller_ScrollChanged">
+          <ItemsControl ItemsSource="{Binding Results}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:CatalogItemViewModel">
+                <Border Classes="game-card-host" Width="220" Height="420"
+                        Tag="{Binding}">
+                  <Border Classes="game-card">
+                    <Border Classes="game-card-face">
+                      <DockPanel>
+                        <Border DockPanel.Dock="Bottom" Classes="game-card-meta" Padding="10,8">
+                          <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="2" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding Subtitle}" Classes="caption" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding Meta}" Classes="caption" TextWrapping="Wrap" MaxLines="2" />
+                            <ctrl:TagBadges Tags="{Binding Tags}" Limit="4" Size="sm" Expandable="True" Clickable="False" />
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="6" RowDefinitions="Auto,Auto" RowSpacing="6">
+                              <Button Classes="ghost" Content="Details"
+                                      Command="{Binding $parent[UserControl].((vm:BrowseViewModel)DataContext).OpenPreviewCommand}"
+                                      CommandParameter="{Binding}" />
+                              <Button Grid.Column="1" Classes="ghost" Content="F95"
+                                      Command="{Binding $parent[UserControl].((vm:BrowseViewModel)DataContext).OpenThreadCommand}"
+                                      CommandParameter="{Binding}" />
+                              <Button Grid.Row="1" Grid.ColumnSpan="2" Classes="accent" Content="{Binding AddButtonLabel}"
+                                      Command="{Binding $parent[UserControl].((vm:BrowseViewModel)DataContext).AddCommand}"
+                                      CommandParameter="{Binding}"
+                                      IsEnabled="{Binding CanAdd}" />
+                            </Grid>
+                          </StackPanel>
+                        </Border>
+                        <Panel>
+                          <Border Classes="cover-fallback" />
+                          <Image Source="{Binding Cover}" Stretch="UniformToFill"
+                                 IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                        </Panel>
+                      </DockPanel>
+                    </Border>
+                  </Border>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
       </DockPanel>
-    </Border>
-  </Panel>
+    </DockPanel>
+
+    <!-- Full-page catalog preview (library detail layout without local/tracking/downloads) -->
+    <ScrollViewer IsVisible="{Binding IsPreviewOpen}" Margin="8" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Spacing="16">
+        <Button Classes="ghost" Content="← Back to browse" Command="{Binding ClosePreviewCommand}"
+                HorizontalAlignment="Left" />
+
+        <TextBlock Text="{Binding PreviewError}" Foreground="#E35D6A" TextWrapping="Wrap"
+                   IsVisible="{Binding PreviewError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        <TextBlock Text="Fetching overview and gallery from F95…" Classes="caption"
+                   IsVisible="{Binding PreviewBusy}" />
+        <TextBlock Text="{Binding Status}" Classes="caption" TextWrapping="Wrap"
+                   IsVisible="{Binding IsAddingGame}" />
+
+        <Grid ColumnDefinitions="280,*" ColumnSpacing="20">
+          <Border Width="280" Height="408" CornerRadius="14" ClipToBounds="True" Classes="cover-fallback"
+                  HorizontalAlignment="Left" VerticalAlignment="Top">
+            <Image Source="{Binding PreviewCover}" Stretch="UniformToFill"
+                   IsVisible="{Binding PreviewCover, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          </Border>
+
+          <StackPanel Grid.Column="1" Spacing="12">
+            <TextBlock Text="{Binding PreviewTitle}" Classes="title" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding PreviewSubtitle}" Classes="muted" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding PreviewMeta}" Classes="caption" TextWrapping="Wrap" />
+
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <TextBlock Text="F95" Classes="star-label" VerticalAlignment="Center" />
+              <ItemsControl ItemsSource="{Binding PreviewF95Stars}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal" Spacing="2" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:StarSlotViewModel">
+                    <Panel Width="28" Height="28">
+                      <TextBlock Text="★" FontSize="24" Width="28" Height="28"
+                                 Foreground="#55FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                 TextAlignment="Center" />
+                      <Border Width="{Binding FillWidth}" Height="28" HorizontalAlignment="Left" ClipToBounds="True">
+                        <TextBlock Text="★" FontSize="24" Width="28" Height="28"
+                                   Foreground="#F5C542" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                   TextAlignment="Center" />
+                      </Border>
+                    </Panel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Text="{Binding PreviewF95RatingText}" Classes="caption" VerticalAlignment="Center" MinWidth="28" />
+            </StackPanel>
+
+            <TextBlock Text="{Binding PreviewDescription}" TextWrapping="Wrap"
+                       IsVisible="{Binding PreviewDescription, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <ctrl:TagBadges Tags="{Binding PreviewTagList}" Limit="8" Size="md" Expandable="True" Clickable="False" />
+
+            <WrapPanel>
+              <Button Classes="accent" Content="{Binding PreviewAddLabel}"
+                      Command="{Binding AddFromPreviewCommand}"
+                      IsEnabled="{Binding PreviewCanAdd}" Margin="0,0,8,8" />
+              <Button Classes="ghost" Content="Open in library"
+                      Command="{Binding OpenPreviewInLibraryCommand}"
+                      IsVisible="{Binding PreviewCanOpenLibrary}" Margin="0,0,8,8" />
+              <Button Classes="ghost" Content="Open F95 thread"
+                      Command="{Binding OpenPreviewThreadCommand}"
+                      IsVisible="{Binding PreviewThreadUrl, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                      Margin="0,0,8,8" />
+            </WrapPanel>
+          </StackPanel>
+        </Grid>
+
+        <Border Classes="glass" IsVisible="{Binding HasPreviewScreenshots}" Padding="14">
+          <StackPanel Spacing="10">
+            <StackPanel Spacing="2">
+              <TextBlock Text="Screenshots" FontWeight="SemiBold" />
+              <TextBlock Classes="caption"
+                         Text="{Binding PreviewShots.Count, StringFormat={}{0} images · click a thumbnail to preview}" />
+            </StackPanel>
+            <Border CornerRadius="10" ClipToBounds="True" MaxHeight="380" Background="#1A222E">
+              <Image Source="{Binding PreviewSelectedShot}" Stretch="Uniform" MaxHeight="360"
+                     IsVisible="{Binding PreviewSelectedShot, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            </Border>
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+              <ItemsControl ItemsSource="{Binding PreviewShots}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal" Spacing="8" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:CatalogPreviewShotViewModel">
+                    <Border Width="140" Height="90" CornerRadius="8" ClipToBounds="True"
+                            Classes="shot-thumb cover-fallback"
+                            Classes.is-selected="{Binding IsSelected}"
+                            Cursor="Hand"
+                            PointerPressed="PreviewShot_PointerPressed" Tag="{Binding}">
+                      <Image Source="{Binding Image}" Stretch="UniformToFill"
+                             IsVisible="{Binding Image, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
   </Panel>
 </UserControl>

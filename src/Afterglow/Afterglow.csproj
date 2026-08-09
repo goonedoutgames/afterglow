@@ -4,6 +4,9 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Overridden by CI publish (-p:Version=…). Dev builds are prerelease so update checks stay quiet. -->
+    <Version Condition="'$(Version)' == ''">0.0.0-dev</Version>
+    <InformationalVersion>$(Version)</InformationalVersion>
     <ApplicationIcon>Assets\afterglow.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Magick.NET advisory noise; used only to decode hub/F95 cover bytes we already store. -->

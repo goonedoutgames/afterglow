@@ -3,12 +3,21 @@ param(
     [string]$Runtime = "win-x64",
     [string]$Framework = "net8.0-windows",
     [string]$AvnHubExe = "",
-    [string]$Output = "publish/windows"
+    [string]$Output = "publish/windows",
+    [string]$AppVersion = ""
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
+
+$versionArgs = @()
+if ($AppVersion -and $AppVersion.Trim()) {
+    $v = $AppVersion.Trim()
+    if ($v.StartsWith("v") -or $v.StartsWith("V")) { $v = $v.Substring(1) }
+    $versionArgs = @("-p:Version=$v", "-p:InformationalVersion=$v")
+    Write-Host "Stamping assembly version: $v"
+}
 
 Write-Host "Publishing Afterglow ($Configuration / $Runtime / $Framework)..."
 dotnet publish src/Afterglow/Afterglow.csproj `
@@ -16,7 +25,8 @@ dotnet publish src/Afterglow/Afterglow.csproj `
     -f $Framework `
     -r $Runtime `
     --self-contained false `
-    -o $Output
+    -o $Output `
+    @versionArgs
 
 $sidecar = Join-Path $Output "sidecar"
 New-Item -ItemType Directory -Force -Path $sidecar | Out-Null

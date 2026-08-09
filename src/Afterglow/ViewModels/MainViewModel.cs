@@ -1,11 +1,13 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using Afterglow.Core;
 using Afterglow.Core.Models;
 using Afterglow.Downloads;
@@ -40,7 +42,7 @@ public partial class MainViewModel : ViewModelBase
         FirstRun = new FirstRunViewModel(app, OnConfigured);
         LibrarySetup = new LibrarySetupViewModel(app, OnLibrarySetupDone);
         Library = new LibraryViewModel(app, media, toasts, OpenGameAsync);
-        Browse = new BrowseViewModel(app, media, toasts);
+        Browse = new BrowseViewModel(app, media, toasts, OpenGameAsync);
         Downloads = new DownloadsViewModel(app, media);
         Settings = new SettingsViewModel(app, toasts, OnConfigured, OnFactoryReset);
         Detail = new GameDetailViewModel(app, media, () => _ = NavigateAsync("library"), () => _ = NavigateAsync("downloads"), toasts, OnDetailTagClickAsync);
@@ -243,6 +245,7 @@ public partial class MainViewModel : ViewModelBase
     {
         StatusMessage = "Library folder ready";
         await NavigateAsync("library");
+        _ = CheckForAppUpdatesAsync();
     }
 
     private async void OnFactoryReset()
@@ -271,6 +274,48 @@ public partial class MainViewModel : ViewModelBase
         await SyncDownloadNavFromDbAsync();
         await NavigateAsync("library");
         _ = SafeFlushPlaytimeAsync();
+        _ = CheckForAppUpdatesAsync();
+    }
+
+    private async Task CheckForAppUpdatesAsync()
+    {
+        try
+        {
+            await Task.Delay(1200);
+            var checker = new GitHubReleaseUpdateChecker();
+            var update = await checker.CheckAsync(ignoredVersion: _app.Preferences.IgnoredUpdateVersion);
+            if (update is null) return;
+
+            var owner = (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+            var choice = await ConfirmDialog.ShowChoicesAsync(
+                owner,
+                "Update available",
+                $"Afterglow {update.Version} is available (you have {AppVersionInfo.Current}).\n\nOpen the GitHub releases page to download the installer or portable zip?",
+                primaryLabel: "Open releases",
+                secondaryLabel: "Ignore this version",
+                cancelLabel: "Not now");
+
+            if (choice == ConfirmDialogResult.Primary)
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo(update.HtmlUrl) { UseShellExecute = true });
+                }
+                catch
+                {
+                    Toasts.Warning("Couldn't open the browser. Visit github.com/goonedoutgames/afterglow/releases");
+                }
+            }
+            else if (choice == ConfirmDialogResult.Secondary)
+            {
+                await _app.SetIgnoredUpdateVersionAsync(update.Version);
+                Toasts.Info($"Won't ask again about {update.Version}.");
+            }
+        }
+        catch
+        {
+            // Offline / rate-limited — ignore quietly.
+        }
     }
 
     private async Task SyncDownloadNavFromDbAsync()
@@ -1073,18 +1118,21 @@ public partial class BrowseViewModel : ViewModelBase
     private readonly AfterglowAppService _app;
     private readonly MediaCacheService _media;
     private readonly ToastService _toasts;
+    private readonly Func<long, Task> _openLibraryGame;
     private readonly HashSet<long> _libraryThreadIds = [];
+    private readonly HashSet<long> _addingThreadIds = [];
     private readonly List<CatalogTag> _allCatalogTags = [];
     private bool _loaded;
     private bool _catalogLoaded;
     private bool _suppressFilterRefresh;
     private int _searchGeneration;
 
-    public BrowseViewModel(AfterglowAppService app, MediaCacheService media, ToastService toasts)
+    public BrowseViewModel(AfterglowAppService app, MediaCacheService media, ToastService toasts, Func<long, Task> openLibraryGame)
     {
         _app = app;
         _media = media;
         _toasts = toasts;
+        _openLibraryGame = openLibraryGame;
         _suppressFilterRefresh = true;
         SortBy = SortChoices[0];
         DatePreset = DateChoices[0];
@@ -1092,6 +1140,8 @@ public partial class BrowseViewModel : ViewModelBase
         StatusFilter = StatusChoices[0];
         SearchMode = SearchModeChoices[0];
         TagMode = TagModeOptions[0];
+        for (var i = 0; i < 5; i++)
+            PreviewF95Stars.Add(new StarSlotViewModel { Index = i, StarSize = 28 });
         _suppressFilterRefresh = false;
     }
 
@@ -1151,6 +1201,7 @@ public partial class BrowseViewModel : ViewModelBase
     ];
 
     public ObservableCollection<CatalogPreviewShotViewModel> PreviewShots { get; } = [];
+    public ObservableCollection<StarSlotViewModel> PreviewF95Stars { get; } = [];
 
     [ObservableProperty] private string _query = "";
     [ObservableProperty] private LibraryChoice? _sortBy;
@@ -1175,20 +1226,31 @@ public partial class BrowseViewModel : ViewModelBase
     [ObservableProperty] private bool _hasExcludeTags;
     [ObservableProperty] private bool _isPreviewOpen;
     [ObservableProperty] private bool _previewBusy;
+    [ObservableProperty] private bool _isAddingGame;
     [ObservableProperty] private string? _previewError;
     [ObservableProperty] private string _previewTitle = "";
     [ObservableProperty] private string _previewSubtitle = "";
     [ObservableProperty] private string? _previewDescription;
     [ObservableProperty] private string _previewMeta = "";
+    [ObservableProperty] private string _previewF95RatingText = "—";
     [ObservableProperty] private Bitmap? _previewCover;
     [ObservableProperty] private Bitmap? _previewSelectedShot;
     [ObservableProperty] private bool _previewInLibrary;
     [ObservableProperty] private bool _previewCanAdd;
+    [ObservableProperty] private bool _previewCanOpenLibrary;
+    [ObservableProperty] private bool _hasPreviewScreenshots;
     [ObservableProperty] private string _previewAddLabel = "Add to library";
     [ObservableProperty] private string? _previewThreadUrl;
+    [ObservableProperty] private double _scrollOffsetY;
+    [ObservableProperty] private List<string> _previewTagList = [];
     private long? _previewThreadId;
     private long? _previewLibraryGameId;
     private F95SearchResult? _previewResult;
+
+    public bool CanSearch => !Busy && !IsAddingGame;
+
+    partial void OnBusyChanged(bool value) => OnPropertyChanged(nameof(CanSearch));
+    partial void OnIsAddingGameChanged(bool value) => OnPropertyChanged(nameof(CanSearch));
 
     public async Task EnsureLoadedAsync()
     {
@@ -1416,6 +1478,12 @@ public partial class BrowseViewModel : ViewModelBase
 
     private async Task ExecuteSearchAsync()
     {
+        if (IsAddingGame)
+        {
+            Status = "Wait for the current add to finish…";
+            return;
+        }
+
         var gen = ++_searchGeneration;
         Busy = true; Error = null; Status = null;
         try
@@ -1489,7 +1557,8 @@ public partial class BrowseViewModel : ViewModelBase
                 var item = new CatalogItemViewModel
                 {
                     Result = r,
-                    IsInLibrary = _libraryThreadIds.Contains(r.ThreadId)
+                    IsInLibrary = _libraryThreadIds.Contains(r.ThreadId),
+                    IsAdding = _addingThreadIds.Contains(r.ThreadId)
                 };
                 Results.Add(item);
                 _ = LoadCoverAsync(item);
@@ -1521,6 +1590,31 @@ public partial class BrowseViewModel : ViewModelBase
             }
         }
         finally { if (gen == _searchGeneration) Busy = false; }
+    }
+
+    private void SyncCatalogCards(long threadId, bool? inLibrary = null, bool? isAdding = null)
+    {
+        foreach (var r in Results.Where(x => x.Result.ThreadId == threadId))
+        {
+            if (inLibrary is bool lib) r.IsInLibrary = lib;
+            if (isAdding is bool add) r.IsAdding = add;
+        }
+    }
+
+    private void ApplyPreviewRating(double rating)
+    {
+        PreviewF95RatingText = rating > 0 ? rating.ToString("0.0") : "—";
+        for (var i = 0; i < PreviewF95Stars.Count; i++)
+            PreviewF95Stars[i].Fill = Math.Clamp(rating - i, 0, 1);
+    }
+
+    private void ApplyPreviewTags(IEnumerable<string>? tags)
+    {
+        PreviewTagList = (tags ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(40)
+            .ToList();
     }
 
     private async Task RefreshLibraryThreadIdsAsync()
@@ -1591,14 +1685,17 @@ public partial class BrowseViewModel : ViewModelBase
         PreviewCover = item.Cover;
         PreviewSelectedShot = item.Cover;
         PreviewInLibrary = item.IsInLibrary;
-        PreviewCanAdd = !item.IsInLibrary;
-        PreviewAddLabel = item.IsInLibrary ? "In library" : "Add to library";
+        PreviewCanAdd = !item.IsInLibrary && !item.IsAdding;
+        PreviewCanOpenLibrary = false;
+        PreviewAddLabel = item.IsInLibrary ? "In library" : item.IsAdding ? "Adding…" : "Add to library";
         PreviewThreadUrl = item.ThreadUrl;
+        ApplyPreviewRating(item.Result.Rating);
+        ApplyPreviewTags(item.Result.Tags);
         PreviewShots.Clear();
+        HasPreviewScreenshots = false;
         IsPreviewOpen = true;
         PreviewBusy = true;
         Status = $"Loading details · {item.Result.Title}";
-        _toasts.Info(Status);
 
         // Seed gallery from SAM list screenshots while thread scrape loads.
         foreach (var url in new[] { item.Result.Cover }.Concat(item.Result.Screenshots ?? [])
@@ -1610,6 +1707,7 @@ public partial class BrowseViewModel : ViewModelBase
             PreviewShots.Add(shot);
             _ = LoadPreviewShotAsync(shot);
         }
+        HasPreviewScreenshots = PreviewShots.Count > 0;
 
         try
         {
@@ -1621,14 +1719,21 @@ public partial class BrowseViewModel : ViewModelBase
             PreviewDescription = string.IsNullOrWhiteSpace(detail.Description) ? null : detail.Description.Trim();
             PreviewInLibrary = detail.InLibrary || _libraryThreadIds.Contains(detail.ThreadId);
             _previewLibraryGameId = detail.LibraryGameId;
-            PreviewCanAdd = !PreviewInLibrary;
-            PreviewAddLabel = PreviewInLibrary ? "In library" : "Add to library";
+            PreviewCanOpenLibrary = PreviewInLibrary && _previewLibraryGameId is > 0;
+            PreviewCanAdd = !PreviewInLibrary && !_addingThreadIds.Contains(detail.ThreadId);
+            PreviewAddLabel = PreviewInLibrary
+                ? "In library"
+                : _addingThreadIds.Contains(detail.ThreadId) ? "Adding…" : "Add to library";
             PreviewThreadUrl = detail.Url;
+            ApplyPreviewRating(detail.Rating);
+            ApplyPreviewTags(detail.Tags);
             var parts = new List<string>();
             if (detail.Rating > 0) parts.Add($"★ {detail.Rating:0.0}");
             if (detail.Likes is long likes) parts.Add($"Likes {likes}");
             if (detail.Views is long views) parts.Add($"Views {views}");
             if (!string.IsNullOrWhiteSpace(detail.Date)) parts.Add(detail.Date);
+            if (detail.Prefixes is { Count: > 0 })
+                parts.Add(string.Join(" · ", detail.Prefixes.Take(4)));
             PreviewMeta = string.Join(" · ", parts);
 
             var urls = new[] { detail.Cover }.Concat(detail.Screenshots ?? [])
@@ -1643,6 +1748,7 @@ public partial class BrowseViewModel : ViewModelBase
                 PreviewShots.Add(shot);
                 _ = LoadPreviewShotAsync(shot);
             }
+            HasPreviewScreenshots = PreviewShots.Count > 0;
             Status = $"Details · {detail.Title}";
         }
         catch (Exception ex)
@@ -1686,6 +1792,8 @@ public partial class BrowseViewModel : ViewModelBase
         PreviewError = null;
         _previewThreadId = null;
         _previewResult = null;
+        _previewLibraryGameId = null;
+        PreviewCanOpenLibrary = false;
     }
 
     [RelayCommand]
@@ -1700,93 +1808,118 @@ public partial class BrowseViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task OpenPreviewInLibraryAsync()
+    {
+        if (_previewLibraryGameId is not long id || id <= 0) return;
+        IsPreviewOpen = false;
+        await _openLibraryGame(id);
+    }
+
+    [RelayCommand]
     private async Task AddFromPreviewAsync()
     {
-        if (!PreviewCanAdd || _previewThreadId is null) return;
+        if (!PreviewCanAdd || _previewThreadId is null || IsAddingGame) return;
         var tid = _previewThreadId.Value;
         var title = PreviewTitle;
-        PreviewCanAdd = false;
-        PreviewAddLabel = "Adding…";
-        Status = $"Adding {title}…";
-        _toasts.Info($"Adding · {title}");
-        try
-        {
-            var detail = await _app.Hub.AddGameAsync(tid.ToString());
-            _libraryThreadIds.Add(tid);
-            _previewLibraryGameId = detail.Game.Id;
-            PreviewInLibrary = true;
-            PreviewAddLabel = "In library";
-            foreach (var r in Results.Where(x => x.Result.ThreadId == tid))
-                r.IsInLibrary = true;
-            Status = $"Added {detail.Game.Title}";
-            _toasts.Success($"Added to library · {detail.Game.Title}");
-        }
-        catch (Exception ex)
-        {
-            var msg = HubApiException.FriendlyMessage(ex, "Couldn't add this game");
-            PreviewError = msg;
-            PreviewCanAdd = true;
-            PreviewAddLabel = "Add to library";
-            _toasts.Error(msg);
-        }
+        await RunAddAsync(tid.ToString(), title, PreviewCover, tid);
     }
 
     [RelayCommand]
     private async Task AddAsync(CatalogItemViewModel? item)
     {
-        if (item is null || item.IsInLibrary || item.IsAdding) return;
-        item.IsAdding = true;
-        Error = null;
-        Status = $"Adding {item.Result.Title}…";
-        _toasts.Info($"Adding · {item.Result.Title}");
-        try
-        {
-            await _app.Hub.AddGameAsync(item.Result.ThreadId.ToString());
-            item.IsInLibrary = true;
-            _libraryThreadIds.Add(item.Result.ThreadId);
-            Status = $"Added {item.Result.Title}";
-            _toasts.Success($"Added to library · {item.Result.Title}");
-        }
-        catch (Exception ex)
-        {
-            var msg = HubApiException.FriendlyMessage(ex, "Couldn't add this game");
-            Error = msg;
-            Status = null;
-            _toasts.Error(msg);
-        }
-        finally
-        {
-            item.IsAdding = false;
-        }
+        if (item is null || item.IsInLibrary || item.IsAdding || IsAddingGame) return;
+        await RunAddAsync(item.Result.ThreadId.ToString(), item.Result.Title, item.Cover, item.Result.ThreadId);
     }
 
     [RelayCommand]
     private async Task AddByUrlAsync()
     {
-        if (string.IsNullOrWhiteSpace(AddByUrl) || Busy) return;
+        if (string.IsNullOrWhiteSpace(AddByUrl) || Busy || IsAddingGame) return;
         var input = AddByUrl.Trim();
-        Busy = true; Error = null;
-        Status = "Adding from F95 URL…";
-        _toasts.Info("Adding game from URL…");
+        await RunAddAsync(input, input, null, threadIdHint: null);
+    }
+
+    private async Task RunAddAsync(string input, string displayTitle, Bitmap? cover, long? threadIdHint)
+    {
+        IsAddingGame = true;
+        Error = null;
+        PreviewError = null;
+        if (threadIdHint is long tid)
+        {
+            _addingThreadIds.Add(tid);
+            SyncCatalogCards(tid, isAdding: true);
+            if (_previewThreadId == tid)
+            {
+                PreviewCanAdd = false;
+                PreviewAddLabel = "Adding…";
+            }
+        }
+        else
+        {
+            PreviewCanAdd = false;
+            PreviewAddLabel = "Adding…";
+        }
+
+        Status = $"Adding {displayTitle}… (this can take up to ~20s while the hub scrapes F95)";
+        var sticky = _toasts.ShowSticky(
+            "Talking to the hub / F95 — please wait…",
+            title: $"Adding · {displayTitle}",
+            cover: cover);
+
         try
         {
             var detail = await _app.Hub.AddGameAsync(input);
+            var resolvedTid = detail.Game.F95ThreadId ?? threadIdHint;
+            if (resolvedTid is long addedTid)
+            {
+                _libraryThreadIds.Add(addedTid);
+                _addingThreadIds.Remove(addedTid);
+                SyncCatalogCards(addedTid, inLibrary: true, isAdding: false);
+                if (_previewThreadId == addedTid)
+                {
+                    _previewLibraryGameId = detail.Game.Id;
+                    PreviewInLibrary = true;
+                    PreviewCanOpenLibrary = true;
+                    PreviewCanAdd = false;
+                    PreviewAddLabel = "In library";
+                }
+            }
+
+            if (threadIdHint is null)
+                AddByUrl = "";
+
             Status = $"Added {detail.Game.Title}";
-            _toasts.Success($"Added to library · {detail.Game.Title}");
-            if (detail.Game.F95ThreadId is long tid)
-                _libraryThreadIds.Add(tid);
-            foreach (var r in Results.Where(x => x.Result.ThreadId == detail.Game.F95ThreadId))
-                r.IsInLibrary = true;
-            AddByUrl = "";
+            _toasts.Dismiss(sticky);
+            _toasts.ShowRich("Added to library", title: detail.Game.Title, cover: cover, kind: ToastKind.Success);
         }
         catch (Exception ex)
         {
-            var msg = HubApiException.FriendlyMessage(ex, "Couldn't add from that URL");
+            var msg = HubApiException.FriendlyMessage(ex, "Couldn't add this game");
             Error = msg;
+            PreviewError = msg;
             Status = null;
+            if (threadIdHint is long failTid)
+            {
+                _addingThreadIds.Remove(failTid);
+                SyncCatalogCards(failTid, isAdding: false);
+                if (_previewThreadId == failTid && !PreviewInLibrary)
+                {
+                    PreviewCanAdd = true;
+                    PreviewAddLabel = "Add to library";
+                }
+            }
+            else if (!PreviewInLibrary)
+            {
+                PreviewCanAdd = true;
+                PreviewAddLabel = "Add to library";
+            }
+            _toasts.Dismiss(sticky);
             _toasts.Error(msg);
         }
-        finally { Busy = false; }
+        finally
+        {
+            IsAddingGame = _addingThreadIds.Count > 0;
+        }
     }
 }
 
@@ -2259,7 +2392,8 @@ public partial class SettingsViewModel : ViewModelBase
                 LibraryCardScale = existing.LibraryCardScale,
                 LibraryHoverPreviewsEnabled = LibraryHoverPreviewsEnabled,
                 BrowseHoverPreviewsEnabled = false,
-                HoverPreviewIntervalMs = hoverMs
+                HoverPreviewIntervalMs = hoverMs,
+                IgnoredUpdateVersion = existing.IgnoredUpdateVersion
             });
             ThemeAccent.Apply(_app.Preferences.AccentHex);
             ReportOk("Local preferences saved.");

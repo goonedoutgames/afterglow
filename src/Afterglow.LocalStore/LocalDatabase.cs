@@ -36,6 +36,7 @@ public sealed class LocalDatabase : IDisposable
         TryAddColumn("ui_prefs", "library_hover_previews", "INTEGER NOT NULL DEFAULT 1");
         TryAddColumn("ui_prefs", "browse_hover_previews", "INTEGER NOT NULL DEFAULT 1");
         TryAddColumn("ui_prefs", "hover_preview_interval_ms", "INTEGER NOT NULL DEFAULT 1800");
+        TryAddColumn("ui_prefs", "ignored_update_version", "TEXT");
         TryAddColumn("download_jobs", "game_title", "TEXT");
     }
 
@@ -63,7 +64,7 @@ public sealed class LocalDatabase : IDisposable
             SELECT accent_hex, glass_blur, compact_density, library_root, download_concurrency, auto_extract,
                    COALESCE(library_setup_done, 0), COALESCE(library_card_scale, 1.0),
                    COALESCE(library_hover_previews, 1), COALESCE(browse_hover_previews, 1),
-                   COALESCE(hover_preview_interval_ms, 1800)
+                   COALESCE(hover_preview_interval_ms, 1800), ignored_update_version
             FROM ui_prefs WHERE id = 1
             """,
             r => new UiPreferences
@@ -74,7 +75,8 @@ public sealed class LocalDatabase : IDisposable
                 LibraryCardScale = r.IsDBNull(7) ? 1.0 : r.GetDouble(7),
                 LibraryHoverPreviewsEnabled = r.IsDBNull(8) || r.GetInt64(8) != 0,
                 BrowseHoverPreviewsEnabled = r.IsDBNull(9) || r.GetInt64(9) != 0,
-                HoverPreviewIntervalMs = r.IsDBNull(10) ? 1800 : Math.Clamp(r.GetInt32(10), 400, 10000)
+                HoverPreviewIntervalMs = r.IsDBNull(10) ? 1800 : Math.Clamp(r.GetInt32(10), 400, 10000),
+                IgnoredUpdateVersion = r.IsDBNull(11) ? null : r.GetString(11)
             }, new UiPreferences(), cancellationToken);
 
     public Task SaveUiPreferencesAsync(UiPreferences value, CancellationToken cancellationToken = default) =>
@@ -82,14 +84,14 @@ public sealed class LocalDatabase : IDisposable
             """
             INSERT INTO ui_prefs(id,accent_hex,glass_blur,compact_density,library_root,download_concurrency,auto_extract,
                                  library_setup_done,datanodes_api_key,library_card_scale,
-                                 library_hover_previews,browse_hover_previews,hover_preview_interval_ms)
-            VALUES(1,$accent,$blur,$compact,$root,$concurrency,$extract,$setup,NULL,$scale,$libHover,$browseHover,$hoverMs)
+                                 library_hover_previews,browse_hover_previews,hover_preview_interval_ms,ignored_update_version)
+            VALUES(1,$accent,$blur,$compact,$root,$concurrency,$extract,$setup,NULL,$scale,$libHover,$browseHover,$hoverMs,$ignored)
             ON CONFLICT(id) DO UPDATE SET
               accent_hex=$accent, glass_blur=$blur, compact_density=$compact, library_root=$root,
               download_concurrency=$concurrency, auto_extract=$extract, library_setup_done=$setup,
               datanodes_api_key=NULL, library_card_scale=$scale,
               library_hover_previews=$libHover, browse_hover_previews=$browseHover,
-              hover_preview_interval_ms=$hoverMs
+              hover_preview_interval_ms=$hoverMs, ignored_update_version=$ignored
             """,
             [
                 ("$accent", value.AccentHex), ("$blur", value.GlassBlur), ("$compact", value.CompactDensity ? 1 : 0),
@@ -98,8 +100,19 @@ public sealed class LocalDatabase : IDisposable
                 ("$scale", value.LibraryCardScale),
                 ("$libHover", value.LibraryHoverPreviewsEnabled ? 1 : 0),
                 ("$browseHover", value.BrowseHoverPreviewsEnabled ? 1 : 0),
-                ("$hoverMs", Math.Clamp(value.HoverPreviewIntervalMs, 400, 10000))
+                ("$hoverMs", Math.Clamp(value.HoverPreviewIntervalMs, 400, 10000)),
+                ("$ignored", value.IgnoredUpdateVersion)
             ],
+            cancellationToken);
+
+    public Task SetIgnoredUpdateVersionAsync(string? version, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(
+            """
+            INSERT INTO ui_prefs(id,accent_hex,glass_blur,compact_density,library_root,download_concurrency,auto_extract,library_setup_done,ignored_update_version)
+            VALUES(1,'#3D9CF0',24,0,'',2,1,0,$ignored)
+            ON CONFLICT(id) DO UPDATE SET ignored_update_version=$ignored
+            """,
+            [("$ignored", string.IsNullOrWhiteSpace(version) ? null : version.Trim())],
             cancellationToken);
 
     public Task UpdateLibraryCardScaleAsync(double scale, CancellationToken cancellationToken = default) =>

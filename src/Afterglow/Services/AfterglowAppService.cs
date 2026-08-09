@@ -147,6 +147,12 @@ public sealed class AfterglowAppService : IDisposable
         await _db.UpdateLibraryCardScaleAsync(scale, ct);
     }
 
+    public async Task SetIgnoredUpdateVersionAsync(string? version, CancellationToken ct = default)
+    {
+        Preferences.IgnoredUpdateVersion = string.IsNullOrWhiteSpace(version) ? null : version.Trim();
+        await _db.SetIgnoredUpdateVersionAsync(Preferences.IgnoredUpdateVersion, ct);
+    }
+
     /// <summary>Clears hub connection + UI prefs so First-run can choose Local/Remote again. Keeps local installs.</summary>
     public async Task ResetToFactoryAsync(CancellationToken ct = default)
     {
