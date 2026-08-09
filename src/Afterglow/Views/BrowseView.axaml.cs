@@ -32,16 +32,4 @@ public partial class BrowseView : UserControl
         e.Handled = true;
         vm.ToggleCatalogTagCommand.Execute(tag);
     }
-
-    private void CatalogCard_PointerEntered(object? sender, PointerEventArgs e)
-    {
-        if (sender is Border { Tag: CatalogItemViewModel item })
-            item.StartHoverPreview();
-    }
-
-    private void CatalogCard_PointerExited(object? sender, PointerEventArgs e)
-    {
-        if (sender is Border { Tag: CatalogItemViewModel item })
-            item.StopHoverPreview();
-    }
 }

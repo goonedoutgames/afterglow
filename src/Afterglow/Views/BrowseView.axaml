@@ -161,8 +161,6 @@
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:CatalogItemViewModel">
               <Border Classes="game-card-host" Width="220" Height="400"
-                      PointerEntered="CatalogCard_PointerEntered"
-                      PointerExited="CatalogCard_PointerExited"
                       Tag="{Binding}">
                 <Border Classes="game-card">
                   <Border Classes="game-card-face">

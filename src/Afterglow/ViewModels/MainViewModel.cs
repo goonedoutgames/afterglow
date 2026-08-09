@@ -31,7 +31,7 @@ public partial class MainViewModel : ViewModelBase
         Library = new LibraryViewModel(app, media, OpenGameAsync);
         Browse = new BrowseViewModel(app, media, toasts);
         Downloads = new DownloadsViewModel(app, media);
-        Settings = new SettingsViewModel(app, OnConfigured, OnFactoryReset);
+        Settings = new SettingsViewModel(app, toasts, OnConfigured, OnFactoryReset);
         Detail = new GameDetailViewModel(app, media, () => _ = NavigateAsync("library"), () => _ = NavigateAsync("downloads"), toasts, OnDetailTagClickAsync);
         CurrentPage = FirstRun;
         _app.Downloads.JobChanged += OnDownloadJobChanged;
@@ -573,10 +573,6 @@ public partial class CloudSaveItemViewModel : ViewModelBase
 
 public partial class CatalogItemViewModel : ViewModelBase
 {
-    private readonly List<Bitmap> _galleryFrames = [];
-    private DispatcherTimer? _hoverTimer;
-    private int _hoverIndex;
-
     public F95SearchResult Result { get; init; } = new();
     public string Title => Result.Title;
     public string Subtitle => string.Join(" · ", new[] { Result.Creator, Result.Version }.Where(x => !string.IsNullOrWhiteSpace(x)));
@@ -585,44 +581,9 @@ public partial class CatalogItemViewModel : ViewModelBase
     public List<string> Tags => Result.Tags;
     [ObservableProperty] private Bitmap? _cover;
     [ObservableProperty] private bool _isInLibrary;
-    [ObservableProperty] private bool _hoverEnabled = true;
-    [ObservableProperty] private int _hoverIntervalMs = 1800;
     public string AddButtonLabel => IsInLibrary ? "Added" : "Add";
 
     partial void OnIsInLibraryChanged(bool value) => OnPropertyChanged(nameof(AddButtonLabel));
-
-    public void SetGalleryFrames(IEnumerable<Bitmap> frames)
-    {
-        _galleryFrames.Clear();
-        _galleryFrames.AddRange(frames);
-        _hoverIndex = 0;
-        Cover = _galleryFrames.FirstOrDefault();
-    }
-
-    public void StartHoverPreview()
-    {
-        if (!HoverEnabled || _galleryFrames.Count <= 1) return;
-        _hoverTimer ??= new DispatcherTimer();
-        _hoverTimer.Tick -= OnHoverTick;
-        _hoverTimer.Tick += OnHoverTick;
-        _hoverTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(HoverIntervalMs, 400, 10000));
-        _hoverTimer.Start();
-    }
-
-    public void StopHoverPreview()
-    {
-        _hoverTimer?.Stop();
-        _hoverIndex = 0;
-        if (_galleryFrames.Count > 0)
-            Cover = _galleryFrames[0];
-    }
-
-    private void OnHoverTick(object? sender, EventArgs e)
-    {
-        if (_galleryFrames.Count <= 1) return;
-        _hoverIndex = (_hoverIndex + 1) % _galleryFrames.Count;
-        Cover = _galleryFrames[_hoverIndex];
-    }
 }
 
 public partial class DownloadLinkItemViewModel : ViewModelBase
@@ -970,9 +931,11 @@ public partial class LibraryViewModel : ViewModelBase
 
     private async Task LoadCoverAsync(LibraryItemViewModel item)
     {
+        var hoverOn = _app.Preferences.LibraryHoverPreviewsEnabled;
+        var take = hoverOn ? 8 : 1;
         var frames = new List<Bitmap>();
         AnimatedMedia? animated = null;
-        foreach (var url in item.ImageCandidates.Distinct(StringComparer.OrdinalIgnoreCase).Take(8))
+        foreach (var url in item.ImageCandidates.Distinct(StringComparer.OrdinalIgnoreCase).Take(take))
         {
             var media = await _media.GetMediaAsync(url);
             if (media is null) continue;
@@ -983,7 +946,7 @@ public partial class LibraryViewModel : ViewModelBase
         }
         await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
         {
-            item.HoverEnabled = _app.Preferences.LibraryHoverPreviewsEnabled;
+            item.HoverEnabled = hoverOn;
             item.HoverIntervalMs = Math.Clamp(_app.Preferences.HoverPreviewIntervalMs, 400, 10000);
             item.SetGalleryFrames(frames, animated);
         });
@@ -1109,21 +1072,12 @@ public partial class BrowseViewModel : ViewModelBase
     [ObservableProperty] private bool _busy;
     [ObservableProperty] private bool _hasIncludeTags;
     [ObservableProperty] private bool _hasExcludeTags;
-    [ObservableProperty] private bool _hoverPreviewsEnabled = true;
-    [ObservableProperty] private int _hoverPreviewIntervalMs = 1800;
 
     public async Task EnsureLoadedAsync()
     {
-        ApplyHoverPrefs();
         await EnsureCatalogTagsAsync();
         if (_loaded && Results.Count > 0) return;
         await ExecuteSearchAsync();
-    }
-
-    private void ApplyHoverPrefs()
-    {
-        HoverPreviewsEnabled = _app.Preferences.BrowseHoverPreviewsEnabled;
-        HoverPreviewIntervalMs = Math.Clamp(_app.Preferences.HoverPreviewIntervalMs, 400, 10000);
     }
 
     /// <summary>Set include tag and force the next EnsureLoadedAsync / search to apply it.</summary>
@@ -1343,7 +1297,6 @@ public partial class BrowseViewModel : ViewModelBase
                 dateDays = days;
 
             var engineValue = Engine?.Value ?? "";
-            ApplyHoverPrefs();
             var list = await _app.Hub.CatalogSearchAsync(
                 query: string.IsNullOrWhiteSpace(Query) ? null : Query.Trim(),
                 page: Page,
@@ -1386,9 +1339,7 @@ public partial class BrowseViewModel : ViewModelBase
                 var item = new CatalogItemViewModel
                 {
                     Result = r,
-                    IsInLibrary = _libraryThreadIds.Contains(r.ThreadId),
-                    HoverEnabled = HoverPreviewsEnabled,
-                    HoverIntervalMs = HoverPreviewIntervalMs
+                    IsInLibrary = _libraryThreadIds.Contains(r.ThreadId)
                 };
                 Results.Add(item);
                 _ = LoadCoverAsync(item);
@@ -1423,20 +1374,15 @@ public partial class BrowseViewModel : ViewModelBase
 
     private async Task LoadCoverAsync(CatalogItemViewModel item)
     {
-        var candidates = new List<string>();
-        if (!string.IsNullOrWhiteSpace(item.Result.Cover)) candidates.Add(item.Result.Cover);
-        candidates.AddRange(item.Result.Screenshots.Where(x => !string.IsNullOrWhiteSpace(x)));
-        var frames = new List<Bitmap>();
-        foreach (var url in candidates.Distinct(StringComparer.OrdinalIgnoreCase).Take(8))
-        {
-            var bmp = await _media.GetAsync(url);
-            if (bmp is not null) frames.Add(bmp);
-        }
-        if (frames.Count == 0) return;
-        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            item.SetGalleryFrames(frames);
-        });
+        // Cover only — browsing used to prefetch up to 8 gallery frames per card for hover,
+        // which made catalog searches feel very slow.
+        var url = !string.IsNullOrWhiteSpace(item.Result.Cover)
+            ? item.Result.Cover
+            : item.Result.Screenshots.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
+        if (string.IsNullOrWhiteSpace(url)) return;
+        var bmp = await _media.GetAsync(url);
+        if (bmp is null) return;
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => item.Cover = bmp);
     }
 
     [RelayCommand]
@@ -1713,12 +1659,14 @@ public partial class DownloadItemViewModel : ViewModelBase
 public partial class SettingsViewModel : ViewModelBase
 {
     private readonly AfterglowAppService _app;
+    private readonly ToastService _toasts;
     private readonly Action _onReconfigured;
     private readonly Action _onFactoryReset;
 
-    public SettingsViewModel(AfterglowAppService app, Action onReconfigured, Action onFactoryReset)
+    public SettingsViewModel(AfterglowAppService app, ToastService toasts, Action onReconfigured, Action onFactoryReset)
     {
         _app = app;
+        _toasts = toasts;
         _onReconfigured = onReconfigured;
         _onFactoryReset = onFactoryReset;
     }
@@ -1730,7 +1678,7 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private string _accentHex = UiPreferences.DefaultAccentHex;
     [ObservableProperty] private Color _accentColor = Color.Parse(UiPreferences.DefaultAccentHex);
     [ObservableProperty] private bool _saveSyncEnabled = true;
-    [ObservableProperty] private int _saveSyncMax = 10;
+    [ObservableProperty] private string _saveSyncMaxText = "10";
     [ObservableProperty] private bool _saveSyncRolling = true;
     [ObservableProperty] private string? _status;
     [ObservableProperty] private string? _error;
@@ -1746,9 +1694,22 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private string _tagClickAction = "library";
     [ObservableProperty] private string _storageSummary = "Storage: not loaded";
     [ObservableProperty] private bool _libraryHoverPreviewsEnabled = true;
-    [ObservableProperty] private bool _browseHoverPreviewsEnabled = true;
-    [ObservableProperty] private int _hoverPreviewIntervalMs = 1800;
+    [ObservableProperty] private string _hoverPreviewIntervalText = "1800";
     public string[] TagClickOptions { get; } = ["library", "browse"];
+
+    private void ReportOk(string message)
+    {
+        Error = null;
+        Status = message;
+        _toasts.Success(message);
+    }
+
+    private void ReportFail(string message)
+    {
+        Status = null;
+        Error = message;
+        _toasts.Error(message);
+    }
 
     public async Task LoadAsync()
     {
@@ -1757,15 +1718,13 @@ public partial class SettingsViewModel : ViewModelBase
         LibraryRoot = _app.Preferences.LibraryRoot;
         AccentHex = _app.Preferences.AccentHex;
         LibraryHoverPreviewsEnabled = _app.Preferences.LibraryHoverPreviewsEnabled;
-        BrowseHoverPreviewsEnabled = _app.Preferences.BrowseHoverPreviewsEnabled;
-        HoverPreviewIntervalMs = Math.Clamp(_app.Preferences.HoverPreviewIntervalMs, 400, 10000);
+        HoverPreviewIntervalText = Math.Clamp(_app.Preferences.HoverPreviewIntervalMs, 400, 10000).ToString();
         if (ThemeAccent.TryParseColor(AccentHex, out var c))
             AccentColor = c;
         var found = SidecarBootstrap.FindExistingExecutable();
         SidecarInfo = found is null
             ? "No local avn-hub.exe found yet — Use Local / Prepare sidecar will locate or build one."
             : $"Sidecar binary: {found}";
-        Error = null;
         try
         {
             var s = await _app.Hub.GetSettingsAsync();
@@ -1784,13 +1743,13 @@ public partial class SettingsViewModel : ViewModelBase
                 StorageSummary = "Storage unavailable: " + ex.Message;
             }
         }
-        catch (Exception ex) { Error = "Could not load hub settings: " + ex.Message; }
+        catch (Exception ex) { ReportFail("Could not load hub settings: " + ex.Message); }
     }
 
     private void ApplyHubSettings(Afterglow.Core.Models.SettingsView s)
     {
         SaveSyncEnabled = s.SaveSyncEnabled;
-        SaveSyncMax = s.SaveSyncMaxPerGame;
+        SaveSyncMaxText = s.SaveSyncMaxPerGame.ToString();
         SaveSyncRolling = s.SaveSyncRolling;
         F95Username = s.F95Username ?? "";
         F95Status = s.F95Authenticated
@@ -1832,10 +1791,11 @@ public partial class SettingsViewModel : ViewModelBase
         {
             var res = await _app.Hub.F95LoginAsync(F95Username.Trim(), F95Password);
             F95Password = "";
-            Status = string.IsNullOrWhiteSpace(res.Message) ? "Logged in to F95Zone." : res.Message;
+            var msg = string.IsNullOrWhiteSpace(res.Message) ? "Logged in to F95Zone." : res.Message;
             await LoadAsync();
+            ReportOk(msg);
         }
-        catch (Exception ex) { Error = ex.Message; Status = null; }
+        catch (Exception ex) { ReportFail(ex.Message); }
         finally { Busy = false; }
     }
 
@@ -1847,10 +1807,11 @@ public partial class SettingsViewModel : ViewModelBase
         {
             var res = await _app.Hub.F95CookiesAsync(F95Cookies);
             F95Cookies = "";
-            Status = string.IsNullOrWhiteSpace(res.Message) ? "Cookies saved." : res.Message;
+            var msg = string.IsNullOrWhiteSpace(res.Message) ? "Cookies saved." : res.Message;
             await LoadAsync();
+            ReportOk(msg);
         }
-        catch (Exception ex) { Error = ex.Message; Status = null; }
+        catch (Exception ex) { ReportFail(ex.Message); }
         finally { Busy = false; }
     }
 
@@ -1859,7 +1820,7 @@ public partial class SettingsViewModel : ViewModelBase
     {
         if (string.IsNullOrWhiteSpace(HubAppPassword))
         {
-            Error = "Enter a new hub app password first.";
+            ReportFail("Enter a new hub app password first.");
             return;
         }
         Busy = true; Error = null; Status = "Setting hub app password…";
@@ -1867,9 +1828,9 @@ public partial class SettingsViewModel : ViewModelBase
         {
             ApplyHubSettings(await _app.Hub.UpdateSettingsAsync(new UpdateSettingsRequest { AppPassword = HubAppPassword }));
             HubAppPassword = "";
-            Status = "Hub app password updated.";
+            ReportOk("Hub app password updated.");
         }
-        catch (Exception ex) { Error = ex.Message; Status = null; }
+        catch (Exception ex) { ReportFail(ex.Message); }
         finally { Busy = false; }
     }
 
@@ -1880,9 +1841,9 @@ public partial class SettingsViewModel : ViewModelBase
         try
         {
             ApplyHubSettings(await _app.Hub.UpdateSettingsAsync(new UpdateSettingsRequest { AppPasswordRemove = true }));
-            Status = "Hub app password removed — API is open until you set one again.";
+            ReportOk("Hub app password removed — API is open until you set one again.");
         }
-        catch (Exception ex) { Error = ex.Message; Status = null; }
+        catch (Exception ex) { ReportFail(ex.Message); }
         finally { Busy = false; }
     }
 
@@ -1893,9 +1854,9 @@ public partial class SettingsViewModel : ViewModelBase
         try
         {
             ApplyHubSettings(await _app.Hub.UpdateSettingsAsync(new UpdateSettingsRequest { TagClickAction = TagClickAction }));
-            Status = TagClickAction == "browse" ? "Tag clicks open Browse." : "Tag clicks filter Library.";
+            ReportOk(TagClickAction == "browse" ? "Tag clicks open Browse." : "Tag clicks filter Library.");
         }
-        catch (Exception ex) { Error = ex.Message; Status = null; }
+        catch (Exception ex) { ReportFail(ex.Message); }
         finally { Busy = false; }
     }
 
@@ -1906,10 +1867,10 @@ public partial class SettingsViewModel : ViewModelBase
         try
         {
             await _app.Hub.PurgeMediaAsync();
-            Status = "Hub media cache purged.";
             await LoadAsync();
+            ReportOk("Hub media cache purged.");
         }
-        catch (Exception ex) { Error = ex.Message; Status = null; }
+        catch (Exception ex) { ReportFail(ex.Message); }
         finally { Busy = false; }
     }
 
@@ -1935,29 +1896,35 @@ public partial class SettingsViewModel : ViewModelBase
     [RelayCommand]
     private async Task SaveLocalPrefsAsync()
     {
-        Busy = true; Error = null;
+        Busy = true; Error = null; Status = "Saving local preferences…";
         try
         {
             if (!ThemeAccent.TryParseColor(AccentHex, out _))
                 throw new InvalidOperationException("Accent must be a valid hex color like #3D9CF0.");
+            if (!int.TryParse(HoverPreviewIntervalText.Trim(), out var hoverMs))
+                throw new InvalidOperationException("Hover interval must be a number (milliseconds).");
+            hoverMs = Math.Clamp(hoverMs, 400, 10000);
+            HoverPreviewIntervalText = hoverMs.ToString();
+
+            var existing = _app.Preferences;
             await _app.SavePreferencesAsync(new UiPreferences
             {
                 AccentHex = AccentHex.StartsWith('#') ? AccentHex : "#" + AccentHex,
-                GlassBlur = _app.Preferences.GlassBlur,
-                CompactDensity = _app.Preferences.CompactDensity,
+                GlassBlur = existing.GlassBlur,
+                CompactDensity = existing.CompactDensity,
                 LibraryRoot = LibraryRoot,
-                DownloadConcurrency = _app.Preferences.DownloadConcurrency,
-                AutoExtract = _app.Preferences.AutoExtract,
+                DownloadConcurrency = existing.DownloadConcurrency,
+                AutoExtract = existing.AutoExtract,
                 LibrarySetupComplete = true,
-                LibraryCardScale = _app.Preferences.LibraryCardScale,
+                LibraryCardScale = existing.LibraryCardScale,
                 LibraryHoverPreviewsEnabled = LibraryHoverPreviewsEnabled,
-                BrowseHoverPreviewsEnabled = BrowseHoverPreviewsEnabled,
-                HoverPreviewIntervalMs = Math.Clamp(HoverPreviewIntervalMs, 400, 10000)
+                BrowseHoverPreviewsEnabled = false,
+                HoverPreviewIntervalMs = hoverMs
             });
             ThemeAccent.Apply(_app.Preferences.AccentHex);
-            Status = "Local preferences saved.";
+            ReportOk("Local preferences saved.");
         }
-        catch (Exception ex) { Error = ex.Message; Status = null; }
+        catch (Exception ex) { ReportFail(ex.Message); }
         finally { Busy = false; }
     }
 
@@ -1967,15 +1934,18 @@ public partial class SettingsViewModel : ViewModelBase
         Busy = true; Error = null; Status = "Saving hub sync settings…";
         try
         {
+            if (!int.TryParse(SaveSyncMaxText.Trim(), out var max) || max < 1)
+                throw new InvalidOperationException("Max saves per game must be a positive number.");
+            SaveSyncMaxText = max.ToString();
             await _app.Hub.UpdateSettingsAsync(new UpdateSettingsRequest
             {
                 SaveSyncEnabled = SaveSyncEnabled,
-                SaveSyncMaxPerGame = SaveSyncMax,
+                SaveSyncMaxPerGame = max,
                 SaveSyncRolling = SaveSyncRolling
             });
-            Status = "Save sync settings updated on hub.";
+            ReportOk("Save sync settings updated on hub.");
         }
-        catch (Exception ex) { Error = ex.Message; Status = null; }
+        catch (Exception ex) { ReportFail(ex.Message); }
         finally { Busy = false; }
     }
 
@@ -1987,11 +1957,11 @@ public partial class SettingsViewModel : ViewModelBase
         {
             await _app.SwitchToRemoteAsync(RemoteUrl.Trim(), string.IsNullOrWhiteSpace(Password) ? null : Password);
             ModeLabel = "Remote";
-            Status = "Switched to Remote (sidecar stopped).";
             Password = "";
+            ReportOk("Switched to Remote (sidecar stopped).");
             _onReconfigured();
         }
-        catch (Exception ex) { Error = ex.Message; Status = null; }
+        catch (Exception ex) { ReportFail(ex.Message); }
         finally { Busy = false; }
     }
 
@@ -2003,13 +1973,13 @@ public partial class SettingsViewModel : ViewModelBase
         {
             await _app.SwitchToLocalAsync(new Progress<string>(m => Status = m));
             ModeLabel = "Local";
-            Status = "Switched to Local — data stays on this PC.";
             SidecarInfo = _app.Sidecar.LastExecutable is null
                 ? SidecarInfo
                 : $"Sidecar binary: {_app.Sidecar.LastExecutable}";
+            ReportOk("Switched to Local — data stays on this PC.");
             _onReconfigured();
         }
-        catch (Exception ex) { Error = ex.Message; Status = null; }
+        catch (Exception ex) { ReportFail(ex.Message); }
         finally { Busy = false; }
     }
 
@@ -2021,9 +1991,9 @@ public partial class SettingsViewModel : ViewModelBase
         {
             var path = await SidecarBootstrap.EnsureAsync(new Progress<string>(m => Status = m), forceRebuild: true);
             SidecarInfo = $"Sidecar binary: {path}";
-            Status = "Sidecar ready (not started until you Use Local).";
+            ReportOk("Sidecar ready (not started until you Use Local).");
         }
-        catch (Exception ex) { Error = ex.Message; Status = null; }
+        catch (Exception ex) { ReportFail(ex.Message); }
         finally { Busy = false; }
     }
 
@@ -2035,10 +2005,10 @@ public partial class SettingsViewModel : ViewModelBase
         {
             await _app.ResetToFactoryAsync();
             ThemeAccent.Apply(UiPreferences.DefaultAccentHex);
-            Status = "Factory reset complete.";
+            ReportOk("Factory reset complete.");
             _onFactoryReset();
         }
-        catch (Exception ex) { Error = ex.Message; Status = null; }
+        catch (Exception ex) { ReportFail(ex.Message); }
         finally { Busy = false; }
     }
 }
