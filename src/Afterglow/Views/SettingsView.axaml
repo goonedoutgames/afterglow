@@ -123,6 +123,12 @@
           <TextBlock Text="Switch hub mode" FontWeight="SemiBold" />
           <TextBlock Classes="help"
                      Text="Remote talks to a hosted AVN Hub over HTTPS and never starts the embedded hub. Local runs avn-hub on this PC only. Remote and Local libraries are separate." />
+          <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,4,0,4">
+            <Border Width="28" Height="28" CornerRadius="14" ClipToBounds="True" VerticalAlignment="Center">
+              <Image Source="avares://Afterglow/Assets/avn-hub-logo.webp" Stretch="UniformToFill" />
+            </Border>
+            <TextBlock Classes="field-label" Text="Remote AVN Hub" VerticalAlignment="Center" />
+          </StackPanel>
           <TextBlock Classes="field-label" Text="Remote API URL" />
           <TextBox PlaceholderText="https://avns-api.example.com" Text="{Binding RemoteUrl}" IsEnabled="{Binding !Busy}" />
           <TextBlock Classes="field-label" Text="Login password (reconnect)" />

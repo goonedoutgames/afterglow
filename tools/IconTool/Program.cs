@@ -1,16 +1,24 @@
 using System.Buffers.Binary;
 using ImageMagick;
 
-// Usage: IconTool <source.ico|png|webp> <dest.ico>
-// Builds a single multi-resolution .ico (PNG-compressed frames).
+// Usage: IconTool <source.ico|png|webp> <dest.ico> [dest.png] [pngSize]
+// Builds a multi-resolution .ico (PNG-compressed frames). Optionally writes a square PNG for in-app UI.
 if (args.Length < 2)
 {
-    Console.Error.WriteLine("Usage: IconTool <source> <dest.ico>");
+    Console.Error.WriteLine("Usage: IconTool <source> <dest.ico> [dest.png] [pngSize=512]");
     return 1;
 }
 
 var source = Path.GetFullPath(args[0]);
 var dest = Path.GetFullPath(args[1]);
+string? destPng = args.Length >= 3 ? Path.GetFullPath(args[2]) : null;
+var pngSize = 512;
+if (args.Length >= 4 && (!int.TryParse(args[3], out pngSize) || pngSize < 16 || pngSize > 2048))
+{
+    Console.Error.WriteLine("pngSize must be 16-2048");
+    return 1;
+}
+
 if (!File.Exists(source))
 {
     Console.Error.WriteLine("Source not found: " + source);
@@ -33,6 +41,17 @@ using (var master = LoadMaster(source))
         frame.Resize((uint)size, (uint)size);
         frame.Format = MagickFormat.Png32;
         frames.Add((size, frame.ToByteArray()));
+    }
+
+    if (destPng is not null)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(destPng)!);
+        using var ui = master.Clone();
+        ui.FilterType = FilterType.Lanczos;
+        ui.Resize((uint)pngSize, (uint)pngSize);
+        ui.Format = MagickFormat.Png32;
+        ui.Write(destPng);
+        Console.WriteLine($"Wrote {destPng} ({new FileInfo(destPng).Length:N0} bytes, {pngSize}px)");
     }
 }
 

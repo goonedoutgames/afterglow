@@ -68,7 +68,7 @@
               PointerPressed="TitleBar_PointerPressed">
         <Grid ColumnDefinitions="*,Auto">
           <StackPanel Orientation="Horizontal" Spacing="10" Margin="14,0,0,0" VerticalAlignment="Center">
-            <Image Source="avares://Afterglow/Assets/avn-hub-logo.webp" Height="22" />
+            <Image Source="avares://Afterglow/Assets/afterglow-logo.png" Height="22" Width="22" />
             <TextBlock Text="Afterglow" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
             <TextBlock Text="{Binding StatusMessage}" Classes="caption" VerticalAlignment="Center" Margin="8,0,0,0" />
           </StackPanel>
@@ -93,15 +93,44 @@
       </Border>
 
       <DockPanel Margin="16">
-        <Border DockPanel.Dock="Left" Width="240" Margin="0,0,14,0" Classes="glass" Padding="16"
-                IsVisible="{Binding ShowShell}">
+        <Border DockPanel.Dock="Left" Width="240" Margin="0,0,14,0" Classes="glass" Padding="0"
+                ClipToBounds="True" IsVisible="{Binding ShowShell}">
           <DockPanel>
-            <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,18">
-              <Image Source="avares://Afterglow/Assets/avn-hub-logo.webp" Height="40" HorizontalAlignment="Left" />
+            <!-- Inset 1px so content sits inside the glass rim; bottom radii match inner curve. -->
+            <Border DockPanel.Dock="Bottom" Height="108" Margin="1,0,1,1"
+                    CornerRadius="0,0,17,17" ClipToBounds="True" Background="#10060A12">
+              <Panel ClipToBounds="True">
+                <!-- Oversized + clipped so baked-in image rounding / edge glow never shows. -->
+                <Image Source="{Binding NavBanner}"
+                       Opacity="0.5"
+                       Stretch="UniformToFill"
+                       Width="280" Height="130"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       RenderOptions.BitmapInterpolationMode="HighQuality" />
+                <Border Background="#44080A10" IsHitTestVisible="False" />
+                <!-- Soft blend from sidebar fill into the banner. -->
+                <Border IsHitTestVisible="False">
+                  <Border.Background>
+                    <LinearGradientBrush StartPoint="50%,0%" EndPoint="50%,100%">
+                      <GradientStop Color="#F2161C28" Offset="0" />
+                      <GradientStop Color="#B0161C28" Offset="0.22" />
+                      <GradientStop Color="#50161C28" Offset="0.48" />
+                      <GradientStop Color="#00161C28" Offset="0.78" />
+                    </LinearGradientBrush>
+                  </Border.Background>
+                </Border>
+              </Panel>
+            </Border>
+            <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="16,16,16,18">
+              <Image Source="avares://Afterglow/Assets/afterglow-logo.png"
+                     Stretch="Uniform"
+                     HorizontalAlignment="Stretch"
+                     RenderOptions.BitmapInterpolationMode="HighQuality" />
               <TextBlock Text="Afterglow" Classes="title" FontSize="22" />
               <TextBlock Text="AVN Hub desktop" Classes="caption" />
             </StackPanel>
-            <StackPanel Spacing="4">
+            <StackPanel Spacing="4" Margin="16,0,16,12">
               <Button Classes="nav" Content="Library" Command="{Binding NavigateCommand}" CommandParameter="library" />
               <Button Classes="nav" Content="Browse" Command="{Binding NavigateCommand}" CommandParameter="browse" />
               <Button Classes="nav" Command="{Binding NavigateCommand}" CommandParameter="downloads"

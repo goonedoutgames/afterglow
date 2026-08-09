@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using System.Collections.ObjectModel;
@@ -18,14 +19,23 @@ namespace Afterglow.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
+    private static readonly Uri[] NavBannerUris =
+    [
+        new("avares://Afterglow/Assets/AfterglowBanner1.png"),
+        new("avares://Afterglow/Assets/AfterglowBanner2.png"),
+        new("avares://Afterglow/Assets/AfterglowBanner3.png")
+    ];
+
     private readonly AfterglowAppService _app;
     private readonly MediaCacheService _media;
+    private readonly Bitmap[] _navBanners;
 
     public MainViewModel(AfterglowAppService app, MediaCacheService media, ToastService toasts)
     {
         _app = app;
         _media = media;
         Toasts = toasts;
+        _navBanners = NavBannerUris.Select(LoadBanner).ToArray();
         FirstRun = new FirstRunViewModel(app, OnConfigured);
         LibrarySetup = new LibrarySetupViewModel(app, OnLibrarySetupDone);
         Library = new LibraryViewModel(app, media, OpenGameAsync);
@@ -70,6 +80,7 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty] private bool _showShell;
     [ObservableProperty] private bool _showLocalBanner;
     [ObservableProperty] private string _navTitle = "Afterglow";
+    [ObservableProperty] private Bitmap? _navBanner;
     [ObservableProperty] private bool _downloadsActive;
     [ObservableProperty] private string _downloadsNavDetail = "";
     [ObservableProperty] private double _downloadsNavProgress;
@@ -241,11 +252,13 @@ public partial class MainViewModel : ViewModelBase
         StatusMessage = "Factory reset — choose Remote or Local hub";
         CurrentPage = FirstRun;
         NavTitle = "Afterglow";
+        NavBanner = null;
         await Task.CompletedTask;
     }
 
     private async Task EnterConfiguredShellAsync()
     {
+        EnsureNavBanner();
         if (!_app.Preferences.LibrarySetupComplete)
         {
             CurrentPage = LibrarySetup;
@@ -279,6 +292,19 @@ public partial class MainViewModel : ViewModelBase
 
     [RelayCommand]
     private async Task Navigate(string page) => await NavigateAsync(page);
+
+    private static Bitmap LoadBanner(Uri uri)
+    {
+        using var stream = AssetLoader.Open(uri);
+        return new Bitmap(stream);
+    }
+
+    /// <summary>Pick a random sidebar banner once per app session (when the shell first appears).</summary>
+    private void EnsureNavBanner()
+    {
+        if (NavBanner is not null || _navBanners.Length == 0) return;
+        NavBanner = _navBanners[Random.Shared.Next(_navBanners.Length)];
+    }
 
     public async Task NavigateAsync(string page)
     {

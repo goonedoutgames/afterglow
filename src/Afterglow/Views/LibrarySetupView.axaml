@@ -5,6 +5,7 @@
              x:DataType="vm:LibrarySetupViewModel">
   <ScrollViewer>
     <StackPanel Spacing="16" MaxWidth="640" Margin="28" HorizontalAlignment="Center">
+      <Image Source="avares://Afterglow/Assets/afterglow-logo.png" Height="72" Width="72" HorizontalAlignment="Center" />
       <TextBlock Text="Choose your library folder" Classes="title" HorizontalAlignment="Center" />
       <TextBlock Classes="help" TextAlignment="Center" HorizontalAlignment="Center" MaxWidth="520"
                  Text="Like Steam’s library folder — Afterglow installs games and extracts downloads here. Paths stay on this PC and are never uploaded to the hub." />

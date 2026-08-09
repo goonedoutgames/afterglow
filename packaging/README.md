@@ -30,14 +30,14 @@ publish/windows/
 
 ### App icon
 
-Multi-size `src/Afterglow/Assets/afterglow.ico` (taskbar / exe / installer).
+Multi-size `src/Afterglow/Assets/afterglow.ico` (taskbar / exe / installer / BrowserHost).
 
-Regenerate from the current source art:
+Source art: `assets/Afterglow_logo.png` (+ `assets/Afterglow_logo.ico` for reference). UI uses `src/Afterglow/Assets/afterglow-logo.png`. `avn-hub-logo.webp` is only for Remote hub connect branding.
+
+Regenerate the Windows icon:
 
 ```powershell
-dotnet run --project tools/IconTool -- src/Afterglow/Assets/avalonia-logo.ico src/Afterglow/Assets/afterglow.ico
-# or from a new PNG/SVG-exported PNG:
-dotnet run --project tools/IconTool -- path\to\logo.png src/Afterglow/Assets/afterglow.ico
+dotnet run --project tools/IconTool -- assets/Afterglow_logo.png src/Afterglow/Assets/afterglow.ico src/Afterglow/Assets/afterglow-logo.png 512
 ```
 
 ### CI — `.github/workflows/package.yml`
