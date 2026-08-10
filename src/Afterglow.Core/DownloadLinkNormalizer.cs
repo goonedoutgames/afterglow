@@ -111,9 +111,11 @@ public static class DownloadLinkNormalizer
                      || t.Contains("/mac/", StringComparison.Ordinal) || HasWord(t, "mac");
         var hasAndroid = t.Contains("android", StringComparison.Ordinal) || t.Contains("-apk", StringComparison.Ordinal)
                          || t.EndsWith(".apk", StringComparison.Ordinal);
+        var hasIos = HasWord(t, "ios") || t.Contains("-ios", StringComparison.Ordinal)
+                     || t.Contains("_ios", StringComparison.Ordinal) || t.Contains("/ios/", StringComparison.Ordinal);
         var hasPc = HasWord(t, "pc");
 
-        if (hasPc && !hasMac && !hasAndroid)
+        if (hasPc && !hasMac && !hasAndroid && !hasIos)
             return hasLinux && !hasWin ? "PC" : "PC"; // dual Win+Linux package
 
         if (hasWin && hasLinux) return "Windows/Linux";
@@ -121,6 +123,7 @@ public static class DownloadLinkNormalizer
         if (hasLinux) return "Linux";
         if (hasMac) return "Mac";
         if (hasAndroid) return "Android";
+        if (hasIos) return "iOS";
         if (hasPc) return "PC";
         return null;
     }
@@ -153,6 +156,9 @@ public static class DownloadLinkNormalizer
                    || p.Contains("OSX", StringComparison.OrdinalIgnoreCase);
         if (string.Equals(filter, "Android", StringComparison.OrdinalIgnoreCase))
             return p.Contains("Android", StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(filter, "iOS", StringComparison.OrdinalIgnoreCase))
+            return p.Contains("iOS", StringComparison.OrdinalIgnoreCase)
+                   || p.Contains("IOS", StringComparison.OrdinalIgnoreCase);
         if (string.Equals(filter, "PC", StringComparison.OrdinalIgnoreCase))
             return string.Equals(p, "PC", StringComparison.OrdinalIgnoreCase)
                    || p.Contains("Windows/Linux", StringComparison.OrdinalIgnoreCase);
@@ -201,6 +207,7 @@ public static class DownloadLinkNormalizer
         if (string.IsNullOrWhiteSpace(title)) return null;
         var t = title.Trim();
         if (t.Length < 2 || t.Length > 80) return null;
+        if (LooksLikeOpaqueId(t)) return null;
         // Drop bare platform-only leftovers that slipped through.
         if (InferPlatform(t) is not null
             && !t.Contains(' ', StringComparison.Ordinal)
@@ -247,6 +254,16 @@ public static class DownloadLinkNormalizer
     private static bool LooksLikeOpaqueId(string value)
     {
         var v = value.Trim();
+        if (v.Length == 0) return true;
+
+        // Space-joined opaque hoster path segments (masked pixeldrain titles).
+        var parts = v.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length >= 2 && parts.All(LooksLikeOpaqueToken))
+            return true;
+
+        if (LooksLikeOpaqueToken(v))
+            return true;
+
         if (v.Length >= 24 && v.Count(c => c is '.' or '-' or '_') >= 2 && !v.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
             && !v.EndsWith(".rar", StringComparison.OrdinalIgnoreCase)
             && !v.EndsWith(".7z", StringComparison.OrdinalIgnoreCase)
@@ -255,6 +272,19 @@ public static class DownloadLinkNormalizer
         if (v.Length > 40 && v.Count(char.IsLetterOrDigit) > v.Length * 0.85)
             return true;
         return false;
+    }
+
+    private static bool LooksLikeOpaqueToken(string value)
+    {
+        var v = value.Trim();
+        if (v.Length < 10) return false;
+        if (v.Contains(".zip", StringComparison.OrdinalIgnoreCase)
+            || v.Contains(".rar", StringComparison.OrdinalIgnoreCase)
+            || v.Contains(".7z", StringComparison.OrdinalIgnoreCase)
+            || v.Contains(".apk", StringComparison.OrdinalIgnoreCase))
+            return false;
+        var alnum = v.Count(char.IsLetterOrDigit);
+        return alnum >= v.Length * 0.85 && !v.Contains(' ');
     }
 
     private static bool IsJunk(string u) =>

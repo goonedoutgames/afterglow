@@ -293,51 +293,58 @@
               <TextBlock Text="Platform" VerticalAlignment="Center" Classes="caption" />
               <ComboBox Width="150" ItemsSource="{Binding PlatformFilters}" SelectedItem="{Binding PlatformFilter}" />
             </StackPanel>
-            <ItemsControl ItemsSource="{Binding Links}">
-              <ItemsControl.DataTemplates>
-                <DataTemplate DataType="vm:DownloadSectionHeaderViewModel">
-                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Margin="0,10,0,4"
-                             Opacity="0.92" TextWrapping="Wrap" />
+            <TabControl ItemsSource="{Binding DownloadPacks}" SelectedItem="{Binding SelectedDownloadPack}">
+              <TabControl.ItemTemplate>
+                <DataTemplate DataType="vm:DownloadPackTabViewModel">
+                  <TextBlock Text="{Binding Title}" TextWrapping="NoWrap" MaxWidth="220" TextTrimming="CharacterEllipsis" />
                 </DataTemplate>
-                <DataTemplate DataType="vm:DownloadLinkItemViewModel">
-                  <Border Classes="glass" Padding="10,8" Margin="0,0,0,8">
-                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                      <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                        <Border Width="28" Height="28" CornerRadius="6" Background="#33FFFFFF"
-                                VerticalAlignment="Center">
-                          <Panel>
-                            <TextBlock Text="{Binding HostInitial}" FontSize="11" FontWeight="SemiBold"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                                       IsVisible="{Binding HostIcon, Converter={x:Static ObjectConverters.IsNull}}" />
-                            <Image Source="{Binding HostIcon}" Stretch="Uniform" Margin="4"
-                                   IsVisible="{Binding HostIcon, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                          </Panel>
+              </TabControl.ItemTemplate>
+              <TabControl.ContentTemplate>
+                <DataTemplate DataType="vm:DownloadPackTabViewModel">
+                  <ItemsControl ItemsSource="{Binding Links}" Margin="0,8,0,0">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="vm:DownloadLinkItemViewModel">
+                        <Border Classes="glass" Padding="10,8" Margin="0,0,0,8">
+                          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                              <Border Width="28" Height="28" CornerRadius="6" Background="#33FFFFFF"
+                                      VerticalAlignment="Center">
+                                <Panel>
+                                  <TextBlock Text="{Binding HostInitial}" FontSize="11" FontWeight="SemiBold"
+                                             HorizontalAlignment="Center" VerticalAlignment="Center"
+                                             IsVisible="{Binding HostIcon, Converter={x:Static ObjectConverters.IsNull}}" />
+                                  <Image Source="{Binding HostIcon}" Stretch="Uniform" Margin="4"
+                                         IsVisible="{Binding HostIcon, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                </Panel>
+                              </Border>
+                              <Border Background="{DynamicResource AccentBrush}" CornerRadius="6" Padding="8,3" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding HostLabel}" FontSize="11" Foreground="White" />
+                              </Border>
+                              <Border Background="{Binding PlatformBrush}" CornerRadius="6" Padding="8,3" VerticalAlignment="Center"
+                                      IsVisible="{Binding Platform, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                  <Path Data="{Binding PlatformPath}" Width="12" Height="12" Stretch="Uniform"
+                                        Fill="White" VerticalAlignment="Center" />
+                                  <TextBlock Text="{Binding PlatformLabel}" FontSize="11" Foreground="White" />
+                                </StackPanel>
+                              </Border>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                              <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
+                              <TextBlock Text="{Binding Url}" Classes="caption" TextTrimming="CharacterEllipsis" Opacity="0.55" MaxHeight="18" />
+                            </StackPanel>
+                            <Button Grid.Column="2" Classes="accent" MinWidth="96" Content="{Binding ActionLabel}"
+                                    VerticalAlignment="Center"
+                                    Command="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).DownloadLinkCommand}"
+                                    CommandParameter="{Binding}" />
+                          </Grid>
                         </Border>
-                        <Border Background="{DynamicResource AccentBrush}" CornerRadius="6" Padding="8,3" VerticalAlignment="Center">
-                          <TextBlock Text="{Binding HostLabel}" FontSize="11" Foreground="White" />
-                        </Border>
-                        <Border Background="{Binding PlatformBrush}" CornerRadius="6" Padding="8,3" VerticalAlignment="Center"
-                                IsVisible="{Binding Platform, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                          <StackPanel Orientation="Horizontal" Spacing="5">
-                            <Path Data="{Binding PlatformPath}" Width="12" Height="12" Stretch="Uniform"
-                                  Fill="White" VerticalAlignment="Center" />
-                            <TextBlock Text="{Binding PlatformLabel}" FontSize="11" Foreground="White" />
-                          </StackPanel>
-                        </Border>
-                      </StackPanel>
-                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                        <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding Url}" Classes="caption" TextTrimming="CharacterEllipsis" Opacity="0.55" MaxHeight="18" />
-                      </StackPanel>
-                      <Button Grid.Column="2" Classes="accent" MinWidth="96" Content="{Binding ActionLabel}"
-                              VerticalAlignment="Center"
-                              Command="{Binding $parent[UserControl].((vm:GameDetailViewModel)DataContext).DownloadLinkCommand}"
-                              CommandParameter="{Binding}" />
-                    </Grid>
-                  </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
                 </DataTemplate>
-              </ItemsControl.DataTemplates>
-            </ItemsControl>
+              </TabControl.ContentTemplate>
+            </TabControl>
             <TextBlock Text="{Binding MediaStatus}" Classes="caption" TextWrapping="Wrap" />
           </StackPanel>
         </StackPanel>

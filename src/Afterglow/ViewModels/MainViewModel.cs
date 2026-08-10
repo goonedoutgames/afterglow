@@ -572,8 +572,7 @@ public partial class LibraryItemViewModel : ViewModelBase
         _galleryFrames.Clear();
         _galleryFrames.AddRange(frames);
         _hoverIndex = 0;
-        if (animatedCover is not null)
-            CoverAnimation = animatedCover;
+        CoverAnimation = animatedCover;
         Cover = _galleryFrames.FirstOrDefault() ?? animatedCover?.Preview;
     }
 
@@ -713,10 +712,11 @@ public partial class DownloadLinkItemViewModel : ViewModelBase
     [ObservableProperty] private Bitmap? _hostIcon;
 }
 
-/// <summary>Pack / extras section heading in the download table.</summary>
-public sealed class DownloadSectionHeaderViewModel
+/// <summary>One pack/extras group shown as a download tab.</summary>
+public partial class DownloadPackTabViewModel : ViewModelBase
 {
     public string Title { get; init; } = "";
+    public ObservableCollection<DownloadLinkItemViewModel> Links { get; } = [];
 }
 
 public partial class LibraryViewModel : ViewModelBase
@@ -1051,23 +1051,52 @@ public partial class LibraryViewModel : ViewModelBase
     private async Task LoadCoverAsync(LibraryItemViewModel item)
     {
         var hoverOn = _app.Preferences.LibraryHoverPreviewsEnabled;
-        var take = hoverOn ? 8 : 1;
         var frames = new List<Bitmap>();
-        AnimatedMedia? animated = null;
-        foreach (var url in item.ImageCandidates.Distinct(StringComparer.OrdinalIgnoreCase).Take(take))
+        AnimatedMedia? coverAnimation = null;
+
+        // Pin the card face to CoverUrl. Hover gallery may include screenshots/banner GIFs, but
+        // those must not become CoverAnimation — AnimatedImageView prefers Media over FallbackSource,
+        // which made custom covers disappear on the library grid (Aetegina).
+        if (!string.IsNullOrWhiteSpace(item.CoverUrl))
         {
-            var media = await _media.GetMediaAsync(url);
-            if (media is null) continue;
-            if (animated is null && media.IsAnimated)
-                animated = media;
-            if (media.Preview is not null)
-                frames.Add(media.Preview);
+            var coverMedia = await _media.GetMediaAsync(item.CoverUrl);
+            if (coverMedia?.Preview is not null)
+                frames.Add(coverMedia.Preview);
+            if (coverMedia is { IsAnimated: true })
+                coverAnimation = coverMedia;
         }
+
+        if (hoverOn)
+        {
+            foreach (var url in item.ImageCandidates.Distinct(StringComparer.OrdinalIgnoreCase).Take(8))
+            {
+                if (!string.IsNullOrWhiteSpace(item.CoverUrl)
+                    && string.Equals(url, item.CoverUrl, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var media = await _media.GetMediaAsync(url);
+                if (media?.Preview is not null)
+                    frames.Add(media.Preview);
+            }
+        }
+        else if (frames.Count == 0)
+        {
+            // No CoverUrl (or it failed) — fall back to first preview candidate.
+            foreach (var url in item.ImageCandidates.Distinct(StringComparer.OrdinalIgnoreCase).Take(1))
+            {
+                var media = await _media.GetMediaAsync(url);
+                if (media?.Preview is not null)
+                    frames.Add(media.Preview);
+                if (media is { IsAnimated: true })
+                    coverAnimation = media;
+                break;
+            }
+        }
+
         await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
         {
             item.HoverEnabled = hoverOn;
             item.HoverIntervalMs = Math.Clamp(_app.Preferences.HoverPreviewIntervalMs, 400, 10000);
-            item.SetGalleryFrames(frames, animated);
+            item.SetGalleryFrames(frames, coverAnimation);
         });
     }
 
@@ -2630,8 +2659,9 @@ public partial class GameDetailViewModel : ViewModelBase
     public string InstallChevron => InstallExpanded ? "▾" : "▸";
 
     public ObservableCollection<DownloadLinkItemViewModel> AllLinks { get; } = [];
-    public ObservableCollection<object> Links { get; } = [];
-    public ObservableCollection<string> PlatformFilters { get; } = ["All", "Windows", "Linux", "PC", "Mac", "Android", "Unknown"];
+    public ObservableCollection<DownloadPackTabViewModel> DownloadPacks { get; } = [];
+    [ObservableProperty] private DownloadPackTabViewModel? _selectedDownloadPack;
+    public ObservableCollection<string> PlatformFilters { get; } = ["All", "Windows", "Linux", "PC", "Mac", "Android", "iOS", "Unknown"];
     public ObservableCollection<CloudSaveItemViewModel> Saves { get; } = [];
     public ObservableCollection<ScreenshotThumbViewModel> Screenshots { get; } = [];
     public ObservableCollection<PlayStatusPillViewModel> StatusPills { get; } = [];
@@ -2663,7 +2693,8 @@ public partial class GameDetailViewModel : ViewModelBase
         GalleryHint = "Loading screenshots…";
         F95Url = null;
         AllLinks.Clear();
-        Links.Clear();
+        DownloadPacks.Clear();
+        SelectedDownloadPack = null;
         try
         {
             var detail = await _app.Hub.GetGameAsync(id);
@@ -2848,22 +2879,27 @@ public partial class GameDetailViewModel : ViewModelBase
 
     private void ApplyPlatformFilter()
     {
-        Links.Clear();
+        var previousTitle = SelectedDownloadPack?.Title;
+        DownloadPacks.Clear();
         IEnumerable<DownloadLinkItemViewModel> q = AllLinks;
         if (!string.Equals(PlatformFilter, "All", StringComparison.OrdinalIgnoreCase))
             q = AllLinks.Where(l => DownloadLinkNormalizer.MatchesFilter(l.Platform, PlatformFilter));
 
-        string? lastHeader = null;
+        DownloadPackTabViewModel? current = null;
         foreach (var link in q)
         {
             var header = string.IsNullOrWhiteSpace(link.Title) ? "Downloads" : link.Title!.Trim();
-            if (!string.Equals(header, lastHeader, StringComparison.OrdinalIgnoreCase))
+            if (current is null || !string.Equals(current.Title, header, StringComparison.OrdinalIgnoreCase))
             {
-                Links.Add(new DownloadSectionHeaderViewModel { Title = header });
-                lastHeader = header;
+                current = new DownloadPackTabViewModel { Title = header };
+                DownloadPacks.Add(current);
             }
-            Links.Add(link);
+            current.Links.Add(link);
         }
+
+        SelectedDownloadPack = DownloadPacks.FirstOrDefault(p =>
+                                    string.Equals(p.Title, previousTitle, StringComparison.OrdinalIgnoreCase))
+                               ?? DownloadPacks.FirstOrDefault();
     }
 
     private async Task LoadShotAsync(ScreenshotThumbViewModel thumb, bool preferAnimation = false)
