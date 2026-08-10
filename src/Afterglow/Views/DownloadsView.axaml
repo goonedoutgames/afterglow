@@ -40,9 +40,9 @@
                         </Grid>
                         <ProgressBar Grid.Row="3" Height="5" Minimum="0" Maximum="1" Value="{Binding Progress}" Margin="0,6,0,0" />
                       </Grid>
-                      <Button Grid.Column="2" Classes="ghost" Content="✕" Padding="8,4" Margin="0,8,8,0" VerticalAlignment="Top"
-                              Command="{Binding $parent[UserControl].((vm:DownloadsViewModel)DataContext).RemoveCommand}"
-                              CommandParameter="{Binding}" ToolTip.Tip="Remove from list" />
+                      <Button Grid.Column="2" Classes="ghost" Content="Cancel" Padding="10,4" Margin="0,8,8,0" VerticalAlignment="Top"
+                              Command="{Binding $parent[UserControl].((vm:DownloadsViewModel)DataContext).CancelCommand}"
+                              CommandParameter="{Binding}" ToolTip.Tip="Cancel this download" />
                     </Grid>
                   </Border>
                 </Border>

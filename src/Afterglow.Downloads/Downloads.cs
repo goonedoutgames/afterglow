@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -165,6 +166,8 @@ public sealed class DownloadManager : IDisposable
     private readonly IReadOnlyList<IHostResolver> _resolvers;
     private readonly SemaphoreSlim _concurrency;
     private readonly bool _ownsClient;
+    private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _jobCts = new();
+    private readonly ConcurrentDictionary<Guid, byte> _removedJobs = new();
     public IInteractiveDownloadBrowser? InteractiveBrowser { get; set; }
     /// <summary>Optional provider for F95 (or other) session cookies to seed Afterglow Browser.</summary>
     public Func<CancellationToken, Task<string?>>? SessionCookieProvider { get; set; }
@@ -206,14 +209,29 @@ public sealed class DownloadManager : IDisposable
         };
         await _database.UpsertDownloadJobAsync(job, cancellationToken);
         JobChanged?.Invoke(this, job);
-        _ = ProcessAsync(job, installDirectory, version, autoExtract, cancellationToken);
+        var ct = RegisterJobToken(job.Id, cancellationToken);
+        _ = ProcessAsync(job, installDirectory, version, autoExtract, ct);
         return job;
+    }
+
+    /// <summary>Cancel an in-progress job (download / extract / browser handoff).</summary>
+    public Task CancelJobAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (_jobCts.TryGetValue(id, out var cts))
+        {
+            try { cts.Cancel(); }
+            catch (ObjectDisposedException) { /* already finished */ }
+        }
+        return Task.CompletedTask;
     }
 
     public async Task RemoveJobAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        _removedJobs[id] = 0;
+        await CancelJobAsync(id, cancellationToken);
         await _database.DeleteDownloadJobAsync(id, cancellationToken);
         JobRemoved?.Invoke(this, id);
+        // Do not Dispose the CTS here — the worker may still be unwinding; it releases in finally.
     }
 
     public async Task ClearFinishedAsync(CancellationToken cancellationToken = default)
@@ -239,7 +257,8 @@ public sealed class DownloadManager : IDisposable
             Status = DownloadJobStatus.Queued
         };
         await SaveAsync(job, cancellationToken);
-        _ = RunLocalArchiveAsync(job, archivePath, installDirectory, cancellationToken);
+        var ct = RegisterJobToken(job.Id, cancellationToken);
+        _ = RunLocalArchiveAsync(job, archivePath, installDirectory, ct);
         return job;
     }
 
@@ -259,7 +278,8 @@ public sealed class DownloadManager : IDisposable
             Status = DownloadJobStatus.Queued
         };
         await SaveAsync(job, cancellationToken);
-        _ = RunLinkFolderAsync(job, folderPath, cancellationToken);
+        var ct = RegisterJobToken(job.Id, cancellationToken);
+        _ = RunLinkFolderAsync(job, folderPath, ct);
         return job;
     }
 
@@ -278,11 +298,19 @@ public sealed class DownloadManager : IDisposable
             Status = DownloadJobStatus.Queued
         };
         await SaveAsync(job, cancellationToken);
+        var ct = RegisterJobToken(job.Id, cancellationToken);
         _ = Task.Run(async () =>
         {
             try
             {
-                await FinishFromLocalFileAsync(job, filePath, installDirectory, version: null, autoExtract: false, CancellationToken.None);
+                ct.ThrowIfCancellationRequested();
+                await FinishFromLocalFileAsync(job, filePath, installDirectory, version: null, autoExtract: false, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                job.Status = DownloadJobStatus.Cancelled;
+                job.Error = null;
+                await SaveAsync(job, CancellationToken.None);
             }
             catch (Exception ex)
             {
@@ -290,7 +318,11 @@ public sealed class DownloadManager : IDisposable
                 job.Error = ex.Message;
                 await SaveAsync(job, CancellationToken.None);
             }
-        }, cancellationToken);
+            finally
+            {
+                ReleaseJobToken(job.Id);
+            }
+        });
         return job;
     }
 
@@ -317,12 +349,17 @@ public sealed class DownloadManager : IDisposable
             job.Error = ex.Message;
             await SaveAsync(job, CancellationToken.None);
         }
+        finally
+        {
+            ReleaseJobToken(job.Id);
+        }
     }
 
     private async Task RunLinkFolderAsync(DownloadJob job, string folderPath, CancellationToken cancellationToken)
     {
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             job.Status = DownloadJobStatus.Extracting;
             job.Progress = 0.35;
             job.Error = null;
@@ -348,20 +385,31 @@ public sealed class DownloadManager : IDisposable
             job.Error = null;
             await SaveAsync(job, cancellationToken);
         }
+        catch (OperationCanceledException)
+        {
+            job.Status = DownloadJobStatus.Cancelled;
+            job.Error = null;
+            await SaveAsync(job, CancellationToken.None);
+        }
         catch (Exception ex)
         {
             job.Status = DownloadJobStatus.Failed;
             job.Error = ex.Message;
             await SaveAsync(job, CancellationToken.None);
         }
+        finally
+        {
+            ReleaseJobToken(job.Id);
+        }
     }
 
     private async Task ProcessAsync(DownloadJob job, string installDirectory, string? version, bool autoExtract, CancellationToken cancellationToken)
     {
-        await _concurrency.WaitAsync(cancellationToken);
-        var holdingSlot = true;
+        var holdingSlot = false;
         try
         {
+            await _concurrency.WaitAsync(cancellationToken);
+            holdingSlot = true;
             job.Status = DownloadJobStatus.Resolving;
             job.Error = null;
             await SaveAsync(job, cancellationToken);
@@ -401,6 +449,7 @@ public sealed class DownloadManager : IDisposable
         finally
         {
             if (holdingSlot) _concurrency.Release();
+            ReleaseJobToken(job.Id);
         }
     }
 
@@ -441,7 +490,9 @@ public sealed class DownloadManager : IDisposable
         if (handoff is null)
         {
             job.Status = DownloadJobStatus.Cancelled;
-            job.Error = "Afterglow Browser closed before a download started.";
+            job.Error = cancellationToken.IsCancellationRequested
+                ? null
+                : "Afterglow Browser closed before a download started.";
             await SaveAsync(job, CancellationToken.None);
             return;
         }
@@ -625,7 +676,36 @@ public sealed class DownloadManager : IDisposable
         catch { /* toast/job message still informs the user */ }
     }
 
-    private async Task SaveAsync(DownloadJob job, CancellationToken ct) { await _database.UpsertDownloadJobAsync(job, ct); JobChanged?.Invoke(this, job); }
+    private async Task SaveAsync(DownloadJob job, CancellationToken ct)
+    {
+        // Don't resurrect a job the user already removed from the list.
+        if (_removedJobs.ContainsKey(job.Id)) return;
+        await _database.UpsertDownloadJobAsync(job, ct);
+        JobChanged?.Invoke(this, job);
+    }
+
+    private CancellationToken RegisterJobToken(Guid jobId, CancellationToken linkedTo = default)
+    {
+        // Replace any leftover CTS from a prior attempt with the same id (shouldn't happen).
+        if (_jobCts.TryRemove(jobId, out var old))
+        {
+            try { old.Cancel(); } catch { /* ignore */ }
+            old.Dispose();
+        }
+        _removedJobs.TryRemove(jobId, out _);
+        var cts = linkedTo.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(linkedTo)
+            : new CancellationTokenSource();
+        _jobCts[jobId] = cts;
+        return cts.Token;
+    }
+
+    private void ReleaseJobToken(Guid jobId)
+    {
+        if (_jobCts.TryRemove(jobId, out var cts))
+            cts.Dispose();
+        _removedJobs.TryRemove(jobId, out _);
+    }
 
     private static string SanitizeFileName(string? name)
     {
@@ -635,5 +715,16 @@ public sealed class DownloadManager : IDisposable
         return name;
     }
 
-    public void Dispose() { _concurrency.Dispose(); if (_ownsClient) _client.Dispose(); foreach (var resolver in _resolvers.OfType<IDisposable>()) resolver.Dispose(); }
+    public void Dispose()
+    {
+        foreach (var cts in _jobCts.Values)
+        {
+            try { cts.Cancel(); } catch { /* ignore */ }
+            cts.Dispose();
+        }
+        _jobCts.Clear();
+        _concurrency.Dispose();
+        if (_ownsClient) _client.Dispose();
+        foreach (var resolver in _resolvers.OfType<IDisposable>()) resolver.Dispose();
+    }
 }

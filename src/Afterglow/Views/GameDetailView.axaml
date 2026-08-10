@@ -17,7 +17,7 @@
     </Style>
   </UserControl.Styles>
   <Panel>
-  <ScrollViewer>
+  <ScrollViewer Name="DetailScroller">
     <StackPanel Spacing="16" Margin="8">
       <Button Classes="ghost" Content="← Back to library" Command="{Binding BackCommand}" HorizontalAlignment="Left" />
 
@@ -293,7 +293,8 @@
               <TextBlock Text="Platform" VerticalAlignment="Center" Classes="caption" />
               <ComboBox Width="150" ItemsSource="{Binding PlatformFilters}" SelectedItem="{Binding PlatformFilter}" />
             </StackPanel>
-            <TabControl ItemsSource="{Binding DownloadPacks}" SelectedItem="{Binding SelectedDownloadPack}">
+            <TabControl ItemsSource="{Binding DownloadPacks}" SelectedItem="{Binding SelectedDownloadPack}"
+                        AutoScrollToSelectedItem="False">
               <TabControl.ItemTemplate>
                 <DataTemplate DataType="vm:DownloadPackTabViewModel">
                   <TextBlock Text="{Binding Title}" TextWrapping="NoWrap" MaxWidth="220" TextTrimming="CharacterEllipsis" />

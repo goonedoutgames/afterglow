@@ -2005,9 +2005,19 @@ public partial class DownloadsViewModel : ViewModelBase
     private async Task Refresh() => await RefreshAsync();
 
     [RelayCommand]
+    private async Task Cancel(DownloadItemViewModel? item)
+    {
+        if (item is null) return;
+        await _app.Downloads.CancelJobAsync(item.Id);
+    }
+
+    [RelayCommand]
     private async Task Remove(DownloadItemViewModel? item)
     {
         if (item is null) return;
+        // Active rows use Cancel; if Remove is invoked on an active job, stop it first.
+        if (item.IsActive)
+            await _app.Downloads.CancelJobAsync(item.Id);
         await _app.Downloads.RemoveJobAsync(item.Id);
         if (_byId.Remove(item.Id))
         {

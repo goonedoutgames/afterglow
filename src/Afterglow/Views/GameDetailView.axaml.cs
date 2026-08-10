@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -7,7 +9,47 @@ namespace Afterglow.Views;
 
 public partial class GameDetailView : UserControl
 {
-    public GameDetailView() => InitializeComponent();
+    private GameDetailViewModel? _wiredVm;
+
+    public GameDetailView()
+    {
+        InitializeComponent();
+        // TabControl / focus changes raise BringIntoView and yank the page ScrollViewer
+        // down to downloads when packs finish loading.
+        AddHandler(RequestBringIntoViewEvent, OnRequestBringIntoView, RoutingStrategies.Bubble | RoutingStrategies.Tunnel);
+        DataContextChanged += OnDataContextChanged;
+    }
+
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        if (_wiredVm is not null)
+            _wiredVm.PropertyChanged -= OnVmPropertyChanged;
+        _wiredVm = DataContext as GameDetailViewModel;
+        if (_wiredVm is not null)
+        {
+            _wiredVm.PropertyChanged += OnVmPropertyChanged;
+            ResetDetailScroll();
+        }
+    }
+
+    private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // Only reset when opening another game — not on Refresh metadata (Busy flicker).
+        if (e.PropertyName == nameof(GameDetailViewModel.GameId))
+            ResetDetailScroll();
+    }
+
+    private void ResetDetailScroll()
+    {
+        if (DetailScroller is null) return;
+        DetailScroller.Offset = new Vector(DetailScroller.Offset.X, 0);
+    }
+
+    private static void OnRequestBringIntoView(object? sender, RequestBringIntoViewEventArgs e)
+    {
+        // Page scroll stays user-driven (mouse wheel / scrollbar).
+        e.Handled = true;
+    }
 
     private async void BrowseFolder_Click(object? sender, RoutedEventArgs e)
     {

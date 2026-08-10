@@ -24,9 +24,25 @@ public sealed class InteractiveDownloadBrowser : IInteractiveDownloadBrowser
             throw new PlatformNotSupportedException("Afterglow Browser currently requires Windows (WebView2).");
 
         var tcs = new TaskCompletionSource<BrowserHandoff?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        AfterglowBrowserForm? form = null;
         CancellationTokenRegistration reg = default;
         if (cancellationToken.CanBeCanceled)
-            reg = cancellationToken.Register(() => tcs.TrySetResult(null));
+        {
+            reg = cancellationToken.Register(() =>
+            {
+                tcs.TrySetResult(null);
+                try
+                {
+                    var f = form;
+                    if (f is { IsDisposed: false })
+                        f.BeginInvoke(f.Close);
+                }
+                catch
+                {
+                    // Form already gone.
+                }
+            });
+        }
 
         var thread = new Thread(() =>
         {
@@ -35,9 +51,10 @@ public sealed class InteractiveDownloadBrowser : IInteractiveDownloadBrowser
                 Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
-                using var form = new AfterglowBrowserForm(url, seedCookieHeader, seedCookieDomain, tcs);
-                form.FormClosed += (_, _) => Application.ExitThread();
-                Application.Run(form);
+                using var browserForm = new AfterglowBrowserForm(url, seedCookieHeader, seedCookieDomain, tcs);
+                form = browserForm;
+                browserForm.FormClosed += (_, _) => Application.ExitThread();
+                Application.Run(browserForm);
             }
             catch (Exception ex)
             {
@@ -45,6 +62,7 @@ public sealed class InteractiveDownloadBrowser : IInteractiveDownloadBrowser
             }
             finally
             {
+                form = null;
                 reg.Dispose();
             }
         })
