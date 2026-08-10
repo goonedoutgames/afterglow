@@ -60,7 +60,12 @@ public static class DownloadLinkNormalizer
         if (u.Contains("datanodes.to")) return "datanodes";
         if (u.Contains("buzzheavier.com")) return "buzzheavier";
         if (u.Contains("vikingfile.com")) return "vikingfile";
-        if (u.Contains("attachments.f95zone.to") || u.Contains("f95zone.to/attachments/")) return "f95";
+        if (u.Contains("attachments.f95zone.to", StringComparison.Ordinal) || u.Contains("f95zone.to/attachments/", StringComparison.Ordinal))
+        {
+            // Hub should already skip image attachments; belt-and-suspenders for older hubs.
+            if (LooksLikeImage(u)) return "skip";
+            return "f95";
+        }
         if (u.Contains("mixdrop.")) return "mixdrop";
         if (u.Contains("uploadhaven.com")) return "uploadhaven";
         if (u.Contains("mediafire.com")) return "mediafire";
@@ -302,4 +307,13 @@ public static class DownloadLinkNormalizer
         u.EndsWith(".rar") || u.Contains(".rar?") ||
         u.EndsWith(".7z") || u.Contains(".7z?") ||
         u.EndsWith(".exe") || u.Contains(".exe?");
+
+    private static bool LooksLikeImage(string u) =>
+        u.EndsWith(".jpg", StringComparison.Ordinal) || u.Contains(".jpg?", StringComparison.Ordinal) ||
+        u.EndsWith(".jpeg", StringComparison.Ordinal) || u.Contains(".jpeg?", StringComparison.Ordinal) ||
+        u.EndsWith(".png", StringComparison.Ordinal) || u.Contains(".png?", StringComparison.Ordinal) ||
+        u.EndsWith(".gif", StringComparison.Ordinal) || u.Contains(".gif?", StringComparison.Ordinal) ||
+        u.EndsWith(".webp", StringComparison.Ordinal) || u.Contains(".webp?", StringComparison.Ordinal) ||
+        u.EndsWith(".avif", StringComparison.Ordinal) || u.Contains(".avif?", StringComparison.Ordinal) ||
+        u.EndsWith(".bmp", StringComparison.Ordinal) || u.Contains(".bmp?", StringComparison.Ordinal);
 }
