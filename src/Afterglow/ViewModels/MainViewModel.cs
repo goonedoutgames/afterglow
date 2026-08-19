@@ -32,6 +32,9 @@ public partial class MainViewModel : ViewModelBase
     private readonly AfterglowAppService _app;
     private readonly MediaCacheService _media;
     private readonly Bitmap[] _navBanners;
+    private readonly GitHubReleaseUpdateChecker _appUpdates = new();
+    private int _autoUpdateCheckGate;
+    private bool _updatePromptBusy;
 
     public MainViewModel(AfterglowAppService app, MediaCacheService media, ToastService toasts)
     {
@@ -44,7 +47,7 @@ public partial class MainViewModel : ViewModelBase
         Library = new LibraryViewModel(app, media, toasts, OpenGameAsync);
         Browse = new BrowseViewModel(app, media, toasts, OpenGameAsync);
         Downloads = new DownloadsViewModel(app, media);
-        Settings = new SettingsViewModel(app, toasts, OnConfigured, OnFactoryReset);
+        Settings = new SettingsViewModel(app, toasts, OnConfigured, OnFactoryReset, () => CheckForAppUpdatesAsync(true));
         Detail = new GameDetailViewModel(app, media, () => _ = NavigateAsync("library"), () => _ = NavigateAsync("downloads"), toasts, OnDetailTagClickAsync);
         CurrentPage = FirstRun;
         _app.Downloads.JobChanged += OnDownloadJobChanged;
@@ -200,11 +203,15 @@ public partial class MainViewModel : ViewModelBase
         BytesPerSecond = job.BytesPerSecond
     };
 
+    /// <summary>Copy library chrome into prefs so window close cannot drop sort/card size/view.</summary>
+    public void FlushLibrarySessionToPreferences() => Library.FlushToPreferences();
+
     public async Task BootstrapAsync()
     {
         try
         {
             await _app.InitializeAsync();
+            Library.HydrateFromPrefs();
             ThemeAccent.Apply(_app.Preferences.AccentHex);
             ShowLocalBanner = _app.IsLocalMode;
             if (_app.IsConfigured)
@@ -245,7 +252,7 @@ public partial class MainViewModel : ViewModelBase
     {
         StatusMessage = "Library folder ready";
         await NavigateAsync("library");
-        _ = CheckForAppUpdatesAsync();
+        _ = CheckForAppUpdatesAsync(userInitiated: false);
     }
 
     private async void OnFactoryReset()
@@ -263,6 +270,7 @@ public partial class MainViewModel : ViewModelBase
     private async Task EnterConfiguredShellAsync()
     {
         EnsureNavBanner();
+        Library.HydrateFromPrefs();
         if (!_app.Preferences.LibrarySetupComplete)
         {
             CurrentPage = LibrarySetup;
@@ -272,49 +280,73 @@ public partial class MainViewModel : ViewModelBase
         }
 
         await SyncDownloadNavFromDbAsync();
+        _ = CheckForAppUpdatesAsync(userInitiated: false);
         await NavigateAsync("library");
         _ = SafeFlushPlaytimeAsync();
-        _ = CheckForAppUpdatesAsync();
     }
 
-    private async Task CheckForAppUpdatesAsync()
+    private async Task CheckForAppUpdatesAsync(bool userInitiated = false)
     {
+        if (!userInitiated && Interlocked.Exchange(ref _autoUpdateCheckGate, 1) != 0)
+            return;
+        if (_updatePromptBusy) return;
+
         try
         {
-            await Task.Delay(1200);
-            var checker = new GitHubReleaseUpdateChecker();
-            var update = await checker.CheckAsync(ignoredVersion: _app.Preferences.IgnoredUpdateVersion);
-            if (update is null) return;
+            var update = await _appUpdates.CheckAsync(
+                ignoredVersion: userInitiated ? null : _app.Preferences.IgnoredUpdateVersion);
+            if (update is null)
+            {
+                if (userInitiated)
+                {
+                    Toasts.Info(string.IsNullOrWhiteSpace(_appUpdates.LastError)
+                        ? $"You're on the latest Afterglow ({AppVersionInfo.Current})."
+                        : _appUpdates.LastError!);
+                }
+                return;
+            }
 
             var owner = (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+            _updatePromptBusy = true;
             var choice = await ConfirmDialog.ShowChoicesAsync(
                 owner,
                 "Update available",
-                $"Afterglow {update.Version} is available (you have {AppVersionInfo.Current}).\n\nOpen the GitHub releases page to download the installer or portable zip?",
-                primaryLabel: "Open releases",
+                $"Afterglow {update.Version} is available (you have {AppVersionInfo.Current}).\n\nDownload the installer and run setup? Afterglow will close after the download so the wizard can replace files.",
+                primaryLabel: "Update",
                 secondaryLabel: "Ignore this version",
                 cancelLabel: "Not now");
 
-            if (choice == ConfirmDialogResult.Primary)
-            {
-                try
-                {
-                    Process.Start(new ProcessStartInfo(update.HtmlUrl) { UseShellExecute = true });
-                }
-                catch
-                {
-                    Toasts.Warning("Couldn't open the browser. Visit github.com/goonedoutgames/afterglow/releases");
-                }
-            }
-            else if (choice == ConfirmDialogResult.Secondary)
+            if (choice == ConfirmDialogResult.Secondary)
             {
                 await _app.SetIgnoredUpdateVersionAsync(update.Version);
                 Toasts.Info($"Won't ask again about {update.Version}.");
+                return;
             }
+
+            if (choice != ConfirmDialogResult.Primary)
+                return;
+
+            Library.FlushToPreferences();
+            var installer = await AppUpdateInstaller.DownloadAsync(owner, update);
+            if (string.IsNullOrWhiteSpace(installer))
+            {
+                Toasts.Info("Update download cancelled.");
+                return;
+            }
+
+            Toasts.Success("Starting the Afterglow setup wizard…");
+            AppUpdateInstaller.LaunchWizardAndExit(installer);
         }
-        catch
+        catch (Exception ex)
         {
-            // Offline / rate-limited — ignore quietly.
+            if (userInitiated)
+                Toasts.Error($"Couldn't update Afterglow: {ex.Message}");
+            else
+                System.Diagnostics.Debug.WriteLine($"Afterglow update failed: {ex.Message}");
+        }
+        finally
+        {
+            _updatePromptBusy = false;
         }
     }
 
@@ -367,6 +399,7 @@ public partial class MainViewModel : ViewModelBase
                 }
                 CurrentPage = Library;
                 NavTitle = "Library";
+                Library.HydrateFromPrefs();
                 await Library.RefreshAsync();
                 break;
             case "browse":
@@ -681,6 +714,7 @@ public partial class CatalogItemViewModel : ViewModelBase
     public string? ThreadUrl => string.IsNullOrWhiteSpace(Result.Url) ? null : Result.Url;
     public List<string> Tags => Result.Tags;
     [ObservableProperty] private Bitmap? _cover;
+    [ObservableProperty] private AnimatedMedia? _coverAnimation;
     [ObservableProperty] private bool _isInLibrary;
     [ObservableProperty] private bool _isAdding;
     public string AddButtonLabel => IsInLibrary ? "Added" : IsAdding ? "Adding…" : "Add";
@@ -710,7 +744,10 @@ public partial class CatalogPreviewShotViewModel : ViewModelBase
 {
     public string Url { get; init; } = "";
     [ObservableProperty] private Bitmap? _image;
+    [ObservableProperty] private AnimatedMedia? _animation;
     [ObservableProperty] private bool _isSelected;
+    public bool IsAnimated => Animation?.IsAnimated == true;
+    partial void OnAnimationChanged(AnimatedMedia? value) => OnPropertyChanged(nameof(IsAnimated));
 }
 
 public partial class DownloadLinkItemViewModel : ViewModelBase
@@ -746,6 +783,7 @@ public partial class LibraryViewModel : ViewModelBase
     private readonly Func<long, Task> _openGame;
     private readonly List<LibraryItemViewModel> _allGames = [];
     private bool _suppressFilterRefresh;
+    private bool _persistEnabled;
     private CancellationTokenSource? _coverCts;
     private const int TagCollapseLimit = 5;
 
@@ -755,6 +793,7 @@ public partial class LibraryViewModel : ViewModelBase
         _media = media;
         _toasts = toasts;
         _openGame = openGame;
+        _persistEnabled = false;
         _suppressFilterRefresh = true;
         ApplySessionFromPrefs();
         ApplyCardSizeFromPrefs();
@@ -1010,36 +1049,60 @@ public partial class LibraryViewModel : ViewModelBase
 
     partial void OnSortByChanged(LibraryChoice? value)
     {
-        if (_suppressFilterRefresh || value is null) return;
+        if (!CanPersistSession || value is null) return;
         _ = PersistSessionAsync();
         _ = RefreshAsync();
     }
 
     partial void OnStatusFilterChanged(LibraryChoice? value)
     {
-        if (_suppressFilterRefresh || value is null) return;
+        if (!CanPersistSession || value is null) return;
         _ = PersistSessionAsync();
         _ = RefreshAsync();
     }
 
     partial void OnInstallFilterChanged(LibraryChoice? value)
     {
-        if (_suppressFilterRefresh || value is null) return;
+        if (!CanPersistSession || value is null) return;
         _ = PersistSessionAsync();
         ApplyLocalFilters();
     }
 
     partial void OnGridViewChanged(bool value)
     {
-        if (_suppressFilterRefresh) return;
+        if (!CanPersistSession) return;
         _ = PersistSessionAsync();
     }
 
     partial void OnCardSizeChoiceChanged(LibraryChoice? value)
     {
-        if (_suppressFilterRefresh || value is null) return;
+        if (!CanPersistSession || value is null) return;
         _ = PersistCardSizeAsync();
     }
+
+    /// <summary>Re-read SQLite prefs after Initialize — constructor runs before the DB is loaded.</summary>
+    public void HydrateFromPrefs()
+    {
+        _suppressFilterRefresh = true;
+        ApplySessionFromPrefs();
+        ApplyCardSizeFromPrefs();
+        _suppressFilterRefresh = false;
+    }
+
+    public void EnableSessionPersistence() => _persistEnabled = true;
+
+    /// <summary>Copy the live library chrome into in-memory prefs so a window close cannot drop them.</summary>
+    public void FlushToPreferences()
+    {
+        var prefs = _app.Preferences;
+        prefs.LibrarySort = SortBy?.Value ?? "title_asc";
+        prefs.LibraryPlayStatus = StatusFilter?.Value ?? "";
+        prefs.LibraryInstallFilter = InstallFilter?.Value ?? "all";
+        prefs.LibraryGridView = GridView;
+        prefs.LibraryCardScale = ScaleFromChoice(CardSizeChoice?.Value);
+    }
+
+    private bool CanPersistSession => _persistEnabled && !_suppressFilterRefresh;
 
     private void ApplySessionFromPrefs()
     {
@@ -1069,35 +1132,36 @@ public partial class LibraryViewModel : ViewModelBase
     private void ApplyCardSizeFromPrefs()
     {
         var scale = Math.Clamp(_app.Preferences.LibraryCardScale, 0.75, 2.0);
-        var choice = scale switch
-        {
-            <= 0.85 => CardSizeChoices[0],
-            <= 1.1 => CardSizeChoices[1],
-            <= 1.35 => CardSizeChoices[2],
-            <= 1.65 => CardSizeChoices[3],
-            _ => CardSizeChoices[4]
-        };
-        CardSizeChoice = choice;
+        CardSizeChoice = ChoiceFromScale(scale);
         ApplyCardMetrics(scale);
     }
 
     private async Task PersistCardSizeAsync()
     {
-        var scale = CardSizeChoice?.Value switch
-        {
-            "small" => 0.8,
-            "large" => 1.25,
-            "xl" => 1.5,
-            "xxxl" => 1.85,
-            _ => 1.0
-        };
+        var scale = ScaleFromChoice(CardSizeChoice?.Value);
         ApplyCardMetrics(scale);
 
-        // Only touch card scale — never rewrite the whole prefs object (startup races
-        // used to wipe LibrarySetupComplete / LibraryRoot and force the setup screen).
         try { await _app.SaveLibraryCardScaleAsync(scale); }
         catch { /* non-fatal */ }
     }
+
+    private LibraryChoice ChoiceFromScale(double scale) => scale switch
+    {
+        <= 0.85 => CardSizeChoices[0],
+        <= 1.1 => CardSizeChoices[1],
+        <= 1.35 => CardSizeChoices[2],
+        <= 1.65 => CardSizeChoices[3],
+        _ => CardSizeChoices[4]
+    };
+
+    private static double ScaleFromChoice(string? value) => value switch
+    {
+        "small" => 0.8,
+        "large" => 1.25,
+        "xl" => 1.5,
+        "xxxl" => 1.85,
+        _ => 1.0
+    };
 
     private void ApplyCardMetrics(double scale)
     {
@@ -1160,17 +1224,17 @@ public partial class LibraryViewModel : ViewModelBase
     {
         var hoverOn = _app.Preferences.LibraryHoverPreviewsEnabled;
         var request = MediaCacheRequest.Thumbnail(item.CoverVersion);
-        Bitmap? cover = null;
+        AnimatedMedia? media = null;
 
         if (!string.IsNullOrWhiteSpace(item.CoverUrl))
-            cover = await _media.GetAsync(item.CoverUrl, request, cancellationToken);
+            media = await _media.GetMediaAsync(item.CoverUrl, request, cancellationToken);
 
-        if (cover is null)
+        if (media is null)
         {
             foreach (var url in item.ImageCandidates.Distinct(StringComparer.OrdinalIgnoreCase).Take(1))
             {
-                cover = await _media.GetAsync(url, request, cancellationToken);
-                if (cover is not null) break;
+                media = await _media.GetMediaAsync(url, request, cancellationToken);
+                if (media is not null) break;
             }
         }
 
@@ -1179,7 +1243,7 @@ public partial class LibraryViewModel : ViewModelBase
         {
             item.HoverEnabled = hoverOn;
             item.HoverIntervalMs = Math.Clamp(_app.Preferences.HoverPreviewIntervalMs, 400, 10000);
-            item.SetCover(cover);
+            item.SetCover(media?.Preview, media is { IsAnimated: true } ? media : null);
         });
     }
 
@@ -1378,7 +1442,9 @@ public partial class BrowseViewModel : ViewModelBase
     [ObservableProperty] private string _previewMeta = "";
     [ObservableProperty] private string _previewF95RatingText = "—";
     [ObservableProperty] private Bitmap? _previewCover;
+    [ObservableProperty] private AnimatedMedia? _previewCoverAnimation;
     [ObservableProperty] private Bitmap? _previewSelectedShot;
+    [ObservableProperty] private AnimatedMedia? _previewSelectedAnimation;
     [ObservableProperty] private bool _previewInLibrary;
     [ObservableProperty] private bool _previewCanAdd;
     [ObservableProperty] private bool _previewCanOpenLibrary;
@@ -1783,9 +1849,13 @@ public partial class BrowseViewModel : ViewModelBase
             ? item.Result.Cover
             : item.Result.Screenshots.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
         if (string.IsNullOrWhiteSpace(url)) return;
-        var bmp = await _media.GetAsync(url);
-        if (bmp is null) return;
-        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => item.Cover = bmp);
+        var media = await _media.GetMediaAsync(url, MediaCacheRequest.Thumbnail());
+        if (media is null) return;
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            item.Cover = media.Preview;
+            item.CoverAnimation = media.IsAnimated ? media : null;
+        });
     }
 
     [RelayCommand]
@@ -1827,7 +1897,9 @@ public partial class BrowseViewModel : ViewModelBase
         PreviewDescription = null;
         PreviewError = null;
         PreviewCover = item.Cover;
+        PreviewCoverAnimation = item.CoverAnimation;
         PreviewSelectedShot = item.Cover;
+        PreviewSelectedAnimation = item.CoverAnimation;
         PreviewInLibrary = item.IsInLibrary;
         PreviewCanAdd = !item.IsInLibrary && !item.IsAdding;
         PreviewCanOpenLibrary = false;
@@ -1911,21 +1983,31 @@ public partial class BrowseViewModel : ViewModelBase
 
     private async Task LoadPreviewShotAsync(CatalogPreviewShotViewModel shot)
     {
-        var bmp = await _media.GetAsync(shot.Url);
-        if (bmp is null) return;
+        var media = await _media.GetMediaAsync(shot.Url, MediaCacheRequest.Thumbnail());
+        if (media is null) return;
         await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
         {
-            shot.Image = bmp;
-            if (PreviewCover is null) PreviewCover = bmp;
-            if (PreviewSelectedShot is null) PreviewSelectedShot = bmp;
+            shot.Image = media.Preview;
+            shot.Animation = media.IsAnimated ? media : null;
+            if (PreviewCover is null)
+            {
+                PreviewCover = media.Preview;
+                PreviewCoverAnimation = media.IsAnimated ? media : null;
+            }
+            if (PreviewSelectedShot is null)
+            {
+                PreviewSelectedShot = media.Preview;
+                PreviewSelectedAnimation = media.IsAnimated ? media : null;
+            }
         });
     }
 
     [RelayCommand]
     private void SelectPreviewShot(CatalogPreviewShotViewModel? shot)
     {
-        if (shot?.Image is null) return;
-        PreviewSelectedShot = shot.Image;
+        if (shot?.Image is null && shot?.Animation is null) return;
+        PreviewSelectedShot = shot.Image ?? shot.Animation?.Preview;
+        PreviewSelectedAnimation = shot.Animation;
         foreach (var s in PreviewShots)
             s.IsSelected = ReferenceEquals(s, shot);
     }
@@ -2186,12 +2268,15 @@ public partial class DownloadsViewModel : ViewModelBase
             var detail = await _app.Hub.GetGameAsync(gameId);
             var url = detail.CoverUrl ?? detail.CoverFullUrl;
             if (string.IsNullOrWhiteSpace(url)) return;
-            var bmp = await _media.GetAsync(url);
-            if (bmp is null) return;
+            var media = await _media.GetMediaAsync(url, MediaCacheRequest.Thumbnail());
+            if (media is null) return;
             await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
             {
                 foreach (var item in _byId.Values.Where(x => x.GameId == gameId))
-                    item.Cover = bmp;
+                {
+                    item.Cover = media.Preview;
+                    item.CoverAnimation = media.IsAnimated ? media : null;
+                }
             });
         }
         catch
@@ -2220,6 +2305,7 @@ public partial class DownloadItemViewModel : ViewModelBase
     [ObservableProperty] private string? _error;
     [ObservableProperty] private bool _isActive;
     [ObservableProperty] private Bitmap? _cover;
+    [ObservableProperty] private AnimatedMedia? _coverAnimation;
 
     public void Apply(DownloadJob job)
     {
@@ -2297,13 +2383,20 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly ToastService _toasts;
     private readonly Action _onReconfigured;
     private readonly Action _onFactoryReset;
+    private readonly Func<Task> _checkForAppUpdates;
 
-    public SettingsViewModel(AfterglowAppService app, ToastService toasts, Action onReconfigured, Action onFactoryReset)
+    public SettingsViewModel(
+        AfterglowAppService app,
+        ToastService toasts,
+        Action onReconfigured,
+        Action onFactoryReset,
+        Func<Task> checkForAppUpdates)
     {
         _app = app;
         _toasts = toasts;
         _onReconfigured = onReconfigured;
         _onFactoryReset = onFactoryReset;
+        _checkForAppUpdates = checkForAppUpdates;
     }
 
     [ObservableProperty] private string _modeLabel = "";
@@ -2331,6 +2424,7 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private bool _libraryHoverPreviewsEnabled = true;
     [ObservableProperty] private string _hoverPreviewIntervalText = "1800";
     [ObservableProperty] private bool _startWithWindows;
+    public string AppVersionLabel => $"Installed version {AppVersionInfo.Current}";
     public string[] TagClickOptions { get; } = ["library", "browse"];
 
     private void ReportOk(string message)
@@ -2345,6 +2439,25 @@ public partial class SettingsViewModel : ViewModelBase
         Status = null;
         Error = message;
         _toasts.Error(message);
+    }
+
+    [RelayCommand]
+    private async Task CheckForUpdatesAsync()
+    {
+        if (Busy) return;
+        Busy = true;
+        Error = null;
+        Status = "Checking GitHub for Afterglow updates…";
+        try
+        {
+            await _checkForAppUpdates();
+            if (Status is not null && Status.StartsWith("Checking GitHub", StringComparison.Ordinal))
+                Status = null;
+        }
+        finally
+        {
+            Busy = false;
+        }
     }
 
     public async Task LoadAsync()
@@ -3030,26 +3143,25 @@ public partial class GameDetailViewModel : ViewModelBase
         await ShotLoadGate.WaitAsync();
         try
         {
-            AnimatedMedia? media = preferAnimation
-                ? await _media.GetMediaAsync(thumb.Url)
-                : null;
+            AnimatedMedia? media = await _media.GetMediaAsync(
+                thumb.Url,
+                preferAnimation ? MediaCacheRequest.Detail() : MediaCacheRequest.Thumbnail());
             if (media is null)
             {
-                // Thumbs: still image only — avoids decoding every GIF animation up-front.
-                var bmp = await _media.GetAsync(thumb.Url);
-                if (bmp is null && !string.IsNullOrWhiteSpace(thumb.FallbackUrl))
-                    bmp = await _media.GetAsync(thumb.FallbackUrl);
-                if (bmp is null)
+                if (!string.IsNullOrWhiteSpace(thumb.FallbackUrl))
+                    media = await _media.GetMediaAsync(
+                        thumb.FallbackUrl,
+                        preferAnimation ? MediaCacheRequest.Detail() : MediaCacheRequest.Thumbnail());
+                if (media is null)
                 {
                     if (_media.LastError is not null)
                         MediaStatus = _media.LastError;
                     return;
                 }
-                media = new AnimatedMedia { Preview = bmp };
             }
-            else if (!string.IsNullOrWhiteSpace(thumb.FallbackUrl) && media.Preview is null)
+            else if (!string.IsNullOrWhiteSpace(thumb.FallbackUrl) && !media.IsAnimated)
             {
-                media = await _media.GetMediaAsync(thumb.FallbackUrl) ?? media;
+                media = await _media.GetMediaAsync(thumb.FallbackUrl, MediaCacheRequest.Detail()) ?? media;
             }
 
             await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>

@@ -240,7 +240,13 @@ public sealed class HubApiClient : IDisposable
             }
 
             var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-            return new MediaDownloadResult { Bytes = bytes, Status = status, ETag = etag };
+            return new MediaDownloadResult
+            {
+                Bytes = bytes,
+                Status = status,
+                ETag = etag,
+                ContentType = response.Content.Headers.ContentType?.MediaType
+            };
         }
         catch (Exception ex)
         {
@@ -436,6 +442,7 @@ public sealed class MediaDownloadResult
     public string? Error { get; init; }
     public int? Status { get; init; }
     public string? ETag { get; init; }
+    public string? ContentType { get; init; }
     public bool NotModified { get; init; }
 }
 

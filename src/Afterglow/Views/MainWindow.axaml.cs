@@ -41,6 +41,8 @@ public partial class MainWindow : Window
                 if (App.Services.GetService(typeof(AfterglowAppService)) is not AfterglowAppService app)
                     return;
                 var prefs = app.Preferences;
+                if (DataContext is Afterglow.ViewModels.MainViewModel vm)
+                    vm.FlushLibrarySessionToPreferences();
                 WindowPlacement.Capture(this, prefs);
                 Task.Run(() => app.SavePreferencesAsync(prefs)).GetAwaiter().GetResult();
             }

@@ -13,6 +13,17 @@
 
       <Border Classes="glass">
         <StackPanel Spacing="10">
+          <TextBlock Text="Afterglow updates" FontWeight="SemiBold" />
+          <TextBlock Classes="help" TextWrapping="Wrap"
+                     Text="If GitHub has a newer release, Afterglow downloads Afterglow-Setup-x64.exe, closes, and opens the install wizard." />
+          <TextBlock Text="{Binding AppVersionLabel}" Classes="caption" />
+          <Button Classes="accent" Content="Check for updates" Command="{Binding CheckForUpdatesCommand}"
+                  HorizontalAlignment="Left" IsEnabled="{Binding !Busy}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="glass">
+        <StackPanel Spacing="10">
           <TextBlock Text="F95Zone" FontWeight="SemiBold" />
           <TextBlock Classes="help" TextWrapping="Wrap"
                      Text="Needed for Browse, add/refresh, download links, and media. Use either username/password OR cookies — not both. Prefer cookies if login hits 2FA or CAPTCHA." />

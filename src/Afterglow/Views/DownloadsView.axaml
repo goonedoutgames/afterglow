@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Afterglow.ViewModels"
+             xmlns:ctrl="using:Afterglow.Controls"
              x:Class="Afterglow.Views.DownloadsView"
              x:DataType="vm:DownloadsViewModel">
   <DockPanel Margin="12">
@@ -27,8 +28,10 @@
                       <Border Width="96" Height="96" Background="#22000000" ClipToBounds="True">
                         <Panel>
                           <Border Classes="cover-fallback" IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNull}}" />
-                          <Image Source="{Binding Cover}" Stretch="UniformToFill"
-                                 IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                          <ctrl:AnimatedImageView Media="{Binding CoverAnimation}"
+                                                 FallbackSource="{Binding Cover}"
+                                                 Stretch="UniformToFill"
+                                                 IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
                         </Panel>
                       </Border>
                       <Grid Grid.Column="1" RowDefinitions="Auto,Auto,Auto,Auto" Margin="14,12,12,12" RowSpacing="4">
@@ -62,8 +65,10 @@
                       <Border Width="96" Height="96" Background="#22000000" ClipToBounds="True">
                         <Panel>
                           <Border Classes="cover-fallback" IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNull}}" />
-                          <Image Source="{Binding Cover}" Stretch="UniformToFill"
-                                 IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                          <ctrl:AnimatedImageView Media="{Binding CoverAnimation}"
+                                                 FallbackSource="{Binding Cover}"
+                                                 Stretch="UniformToFill"
+                                                 IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
                         </Panel>
                       </Border>
                       <StackPanel Grid.Column="1" Spacing="4" Margin="14,12,12,12" VerticalAlignment="Center">

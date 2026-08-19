@@ -35,6 +35,7 @@ public readonly record struct MediaCacheRequest
     public static MediaCacheRequest Thumbnail(string? sourceVersion = null) => new()
     {
         MaxWidth = MediaCacheService.ThumbnailWidth,
+        PreferAnimation = true,
         SourceVersion = sourceVersion
     };
 
@@ -108,7 +109,7 @@ public sealed class MediaCacheService
         var maxWidth = request.MaxWidth <= 0 ? DetailWidth : request.MaxWidth;
         var memKey = $"{key}|{maxWidth}|{(request.PreferAnimation ? 1 : 0)}";
 
-        if (_decoded.TryGetValue(memKey, out var hit) && (!request.PreferAnimation || hit.IsAnimated || !LooksLikeGifUrl(key)))
+        if (TryMemoryHit(memKey, key, request.PreferAnimation, out var hit))
         {
             SuccessCount++;
             return hit;
@@ -118,7 +119,7 @@ public sealed class MediaCacheService
         await gate.WaitAsync(cancellationToken);
         try
         {
-            if (_decoded.TryGetValue(memKey, out hit) && (!request.PreferAnimation || hit.IsAnimated || !LooksLikeGifUrl(key)))
+            if (TryMemoryHit(memKey, key, request.PreferAnimation, out hit))
             {
                 SuccessCount++;
                 return hit;
@@ -137,11 +138,22 @@ public sealed class MediaCacheService
                             && !string.IsNullOrWhiteSpace(meta.SourceVersion)
                             && !string.Equals(meta.SourceVersion, request.SourceVersion, StringComparison.Ordinal);
 
+                var rawIsGif = File.Exists(rawPath) && LooksLikeGif(rawPath);
+                var wantsGif = request.PreferAnimation
+                               && (LooksLikeGifUrl(key)
+                                   || string.Equals(meta.Format, "gif", StringComparison.OrdinalIgnoreCase));
+                var needsOriginalGif = wantsGif && !rawIsGif && !File.Exists(rawPath);
+
                 var hasFile = File.Exists(rawPath) || File.Exists(pngPath) || File.Exists(thumbPath);
-                if (!hasFile || stale)
+                if (!hasFile || stale || needsOriginalGif)
                 {
-                    var fetched = await FetchToDiskAsync(key, rawPath, meta, stale, cancellationToken);
-                    if (!fetched && !hasFile)
+                    var fetched = await FetchToDiskAsync(
+                        key,
+                        rawPath,
+                        meta,
+                        allowConditional: stale && !needsOriginalGif && File.Exists(rawPath),
+                        cancellationToken);
+                    if (!fetched && !hasFile && !File.Exists(rawPath))
                     {
                         FailureCount++;
                         return null;
@@ -164,30 +176,19 @@ public sealed class MediaCacheService
                 }
 
                 var isGif = LooksLikeGifUrl(key)
+                            || string.Equals(meta.Format, "gif", StringComparison.OrdinalIgnoreCase)
                             || (File.Exists(rawPath) && LooksLikeGif(rawPath))
                             || string.Equals(Path.GetExtension(rawPath), ".gif", StringComparison.OrdinalIgnoreCase);
 
-                if (request.PreferAnimation && isGif && File.Exists(rawPath))
+                if (isGif && File.Exists(rawPath) && LooksLikeGif(rawPath))
+                    meta.Format = "gif";
+
+                if (request.PreferAnimation && isGif && File.Exists(rawPath) && LooksLikeGif(rawPath))
                 {
-                    var decoded = await Task.Run(() => DecodeGifBytes(rawPath, maxWidth), cancellationToken);
-                    if (decoded is { Count: > 0 })
+                    var gif = await DecodeAnimatedGifAsync(rawPath, maxWidth, cancellationToken);
+                    if (gif is not null)
                     {
-                        var gif = await Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            var frames = new List<Bitmap>(decoded.Count);
-                            var delays = new List<int>(decoded.Count);
-                            foreach (var (png, delay) in decoded)
-                            {
-                                frames.Add(new Bitmap(new MemoryStream(png)));
-                                delays.Add(delay);
-                            }
-                            return new AnimatedMedia
-                            {
-                                Preview = frames[0],
-                                Frames = frames,
-                                DelaysMs = delays
-                            };
-                        });
+                        WriteMeta(metaPath, meta);
                         _decoded[memKey] = gif;
                         SuccessCount++;
                         return gif;
@@ -195,10 +196,11 @@ public sealed class MediaCacheService
                 }
 
                 Bitmap? bitmap = null;
-                if (File.Exists(thumbPath))
+                // Flattened PNG thumbs are not GIFs — never use them as the GIF source of truth.
+                if (!isGif && File.Exists(thumbPath))
                     bitmap = await LoadBitmapAsync(thumbPath, maxWidth: 0);
 
-                if (bitmap is null && File.Exists(pngPath))
+                if (bitmap is null && !isGif && File.Exists(pngPath))
                     bitmap = await LoadBitmapAsync(pngPath, maxWidth);
 
                 if (bitmap is null && File.Exists(rawPath))
@@ -226,9 +228,8 @@ public sealed class MediaCacheService
                             TryDelete(thumbPath);
                         }
                     }
-                    else if (!File.Exists(thumbPath))
+                    else if (!isGif && !File.Exists(thumbPath))
                     {
-                        // Keep a small PNG so the next launch skips re-decoding the original.
                         try { await Task.Run(() => ConvertToPng(rawPath, thumbPath, maxWidth), cancellationToken); }
                         catch { /* thumb is optional when Avalonia already decoded */ }
                     }
@@ -292,7 +293,63 @@ public sealed class MediaCacheService
 
         await File.WriteAllBytesAsync(rawPath, download.Bytes, cancellationToken);
         meta.ETag = download.ETag;
+        if (IsGifBytes(download.Bytes)
+            || (download.ContentType?.Contains("gif", StringComparison.OrdinalIgnoreCase) ?? false))
+            meta.Format = "gif";
         return true;
+    }
+
+    private bool TryMemoryHit(string memKey, string url, bool preferAnimation, out AnimatedMedia? hit)
+    {
+        hit = null;
+        if (!_decoded.TryGetValue(memKey, out var cached))
+            return false;
+        if (!preferAnimation || cached.IsAnimated)
+        {
+            hit = cached;
+            return true;
+        }
+
+        // A still frame must not permanently replace a GIF (hub /api/v1/media/*.gif cache).
+        if (!IsGifSource(url))
+        {
+            hit = cached;
+            return true;
+        }
+
+        _decoded.TryRemove(memKey, out _);
+        return false;
+    }
+
+    private bool IsGifSource(string url)
+    {
+        if (LooksLikeGifUrl(url)) return true;
+        var rawPath = CachePathFor(url);
+        if (File.Exists(rawPath) && LooksLikeGif(rawPath)) return true;
+        var meta = ReadMeta(Path.ChangeExtension(rawPath, ".meta.json"));
+        return string.Equals(meta.Format, "gif", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<AnimatedMedia?> DecodeAnimatedGifAsync(string path, int maxWidth, CancellationToken cancellationToken)
+    {
+        var decoded = await Task.Run(() => DecodeGifBytes(path, maxWidth), cancellationToken);
+        if (decoded is not { Count: > 0 }) return null;
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var frames = new List<Bitmap>(decoded.Count);
+            var delays = new List<int>(decoded.Count);
+            foreach (var (png, delay) in decoded)
+            {
+                frames.Add(new Bitmap(new MemoryStream(png)));
+                delays.Add(delay);
+            }
+            return new AnimatedMedia
+            {
+                Preview = frames[0],
+                Frames = frames,
+                DelaysMs = delays
+            };
+        });
     }
 
     private static List<(byte[] Png, int DelayMs)>? DecodeGifBytes(string path, int maxWidth)
@@ -303,11 +360,9 @@ public sealed class MediaCacheService
             if (collection.Count == 0) return null;
             collection.Coalesce();
 
-            var frames = new List<(byte[] Png, int DelayMs)>(Math.Min(collection.Count, 24));
-            int n = 0;
+            var frames = new List<(byte[] Png, int DelayMs)>(collection.Count);
             foreach (var frame in collection)
             {
-                if (n++ >= 24) break;
                 if (maxWidth > 0 && frame.Width > (uint)maxWidth)
                     frame.Resize((uint)maxWidth, 0);
                 var delay = (int)frame.AnimationDelay * 10;
@@ -373,15 +428,20 @@ public sealed class MediaCacheService
             Span<byte> header = stackalloc byte[6];
             using var fs = File.OpenRead(path);
             var n = fs.Read(header);
-            if (n < 6) return false;
-            var sig = Encoding.ASCII.GetString(header);
-            return sig is "GIF87a" or "GIF89a";
+            return n >= 6 && IsGifBytes(header);
         }
         catch
         {
             return false;
         }
     }
+
+    private static bool IsGifBytes(ReadOnlySpan<byte> bytes) =>
+        bytes.Length >= 6
+        && bytes[0] == (byte)'G' && bytes[1] == (byte)'I' && bytes[2] == (byte)'F'
+        && bytes[3] == (byte)'8'
+        && (bytes[4] == (byte)'7' || bytes[4] == (byte)'9')
+        && bytes[5] == (byte)'a';
 
     private static bool LooksLikeAvif(string path)
     {
@@ -467,5 +527,6 @@ public sealed class MediaCacheService
     {
         public string? SourceVersion { get; set; }
         public string? ETag { get; set; }
+        public string? Format { get; set; }
     }
 }

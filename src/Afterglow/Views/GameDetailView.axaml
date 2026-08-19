@@ -206,8 +206,10 @@
                           Classes.is-selected="{Binding IsSelected}"
                           Cursor="Hand" PointerPressed="Screenshot_PointerPressed" Tag="{Binding}">
                     <Panel>
-                      <Image Source="{Binding Image}" Stretch="UniformToFill"
-                             IsVisible="{Binding Image, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                      <ctrl:AnimatedImageView Media="{Binding Animation}"
+                                              FallbackSource="{Binding Image}"
+                                              Stretch="UniformToFill"
+                                              IsVisible="{Binding Image, Converter={x:Static ObjectConverters.IsNotNull}}" />
                       <Border Background="#66000000" IsVisible="{Binding IsSelected}" />
                       <Border Background="#AA1A1A1A" CornerRadius="4" Padding="4,1"
                               HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="4"
@@ -444,8 +446,10 @@
                         Classes="cover-fallback shot-thumb"
                         Classes.is-selected="{Binding IsSelected}"
                         Cursor="Hand" PointerPressed="Screenshot_PointerPressed" Tag="{Binding}">
-                  <Image Source="{Binding Image}" Stretch="UniformToFill"
-                         IsVisible="{Binding Image, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                  <ctrl:AnimatedImageView Media="{Binding Animation}"
+                                          FallbackSource="{Binding Image}"
+                                          Stretch="UniformToFill"
+                                          IsVisible="{Binding Image, Converter={x:Static ObjectConverters.IsNotNull}}" />
                 </Border>
               </DataTemplate>
             </ItemsControl.ItemTemplate>

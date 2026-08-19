@@ -205,8 +205,10 @@
                         </Border>
                         <Panel>
                           <Border Classes="cover-fallback" />
-                          <Image Source="{Binding Cover}" Stretch="UniformToFill"
-                                 IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                          <ctrl:AnimatedImageView Media="{Binding CoverAnimation}"
+                                                 FallbackSource="{Binding Cover}"
+                                                 Stretch="UniformToFill"
+                                                 IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
                         </Panel>
                       </DockPanel>
                     </Border>
@@ -235,8 +237,10 @@
         <Grid ColumnDefinitions="280,*" ColumnSpacing="20">
           <Border Width="280" Height="408" CornerRadius="14" ClipToBounds="True" Classes="cover-fallback"
                   HorizontalAlignment="Left" VerticalAlignment="Top">
-            <Image Source="{Binding PreviewCover}" Stretch="UniformToFill"
-                   IsVisible="{Binding PreviewCover, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <ctrl:AnimatedImageView Media="{Binding PreviewCoverAnimation}"
+                                    FallbackSource="{Binding PreviewCover}"
+                                    Stretch="UniformToFill"
+                                    IsVisible="{Binding PreviewCover, Converter={x:Static ObjectConverters.IsNotNull}}" />
           </Border>
 
           <StackPanel Grid.Column="1" Spacing="12">
@@ -297,8 +301,10 @@
                          Text="{Binding PreviewShots.Count, StringFormat={}{0} images · click a thumbnail to preview}" />
             </StackPanel>
             <Border CornerRadius="10" ClipToBounds="True" MaxHeight="380" Background="#1A222E">
-              <Image Source="{Binding PreviewSelectedShot}" Stretch="Uniform" MaxHeight="360"
-                     IsVisible="{Binding PreviewSelectedShot, Converter={x:Static ObjectConverters.IsNotNull}}" />
+              <ctrl:AnimatedImageView Media="{Binding PreviewSelectedAnimation}"
+                                      FallbackSource="{Binding PreviewSelectedShot}"
+                                      Stretch="Uniform" MaxHeight="360"
+                                      IsVisible="{Binding PreviewSelectedShot, Converter={x:Static ObjectConverters.IsNotNull}}" />
             </Border>
             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
               <ItemsControl ItemsSource="{Binding PreviewShots}">
@@ -314,8 +320,17 @@
                             Classes.is-selected="{Binding IsSelected}"
                             Cursor="Hand"
                             PointerPressed="PreviewShot_PointerPressed" Tag="{Binding}">
-                      <Image Source="{Binding Image}" Stretch="UniformToFill"
-                             IsVisible="{Binding Image, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                      <Panel>
+                        <ctrl:AnimatedImageView Media="{Binding Animation}"
+                                                FallbackSource="{Binding Image}"
+                                                Stretch="UniformToFill"
+                                                IsVisible="{Binding Image, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                        <Border Background="#AA1A1A1A" CornerRadius="4" Padding="4,1"
+                                HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="4"
+                                IsVisible="{Binding IsAnimated}">
+                          <TextBlock Text="GIF" FontSize="10" FontWeight="SemiBold" Foreground="White" />
+                        </Border>
+                      </Panel>
                     </Border>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>

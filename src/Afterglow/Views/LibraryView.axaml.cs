@@ -1,13 +1,32 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Afterglow.ViewModels;
 
 namespace Afterglow.Views;
 
 public partial class LibraryView : UserControl
 {
-    public LibraryView() => InitializeComponent();
+    public LibraryView()
+    {
+        InitializeComponent();
+        Loaded += OnLoaded;
+    }
+
+    private void OnLoaded(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not LibraryViewModel vm) return;
+        vm.HydrateFromPrefs();
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (DataContext is LibraryViewModel live)
+            {
+                live.HydrateFromPrefs();
+                live.EnableSessionPersistence();
+            }
+        }, DispatcherPriority.Loaded);
+    }
 
     private async void GameCard_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
