@@ -100,6 +100,13 @@
     <Setter Property="Background" Value="#38FFFFFF" />
     <Setter Property="BorderBrush" Value="#55FFFFFF" />
   </Style>
+  <Style Selector="Button:disabled">
+    <Setter Property="Opacity" Value="0.45" />
+  </Style>
+  <Style Selector="Button.accent:disabled">
+    <Setter Property="Background" Value="#3A4658" />
+    <Setter Property="Foreground" Value="#9AA8B8" />
+  </Style>
   <Style Selector="Button.nav">
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
@@ -306,6 +313,13 @@
   <Style Selector="Border.tag-filter-chip.is-selected TextBlock">
     <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
     <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="Border.tag-filter-chip.tag-more">
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentGlowBrush}" />
+    <Setter Property="Background" Value="#223D9CF0" />
+  </Style>
+  <Style Selector="Border.tag-filter-chip.tag-more TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
   </Style>
   <Style Selector="Button.status-pill">
     <Setter Property="CornerRadius" Value="999" />

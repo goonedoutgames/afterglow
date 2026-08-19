@@ -43,6 +43,10 @@ public sealed class LocalDatabase : IDisposable
         TryAddColumn("ui_prefs", "window_y", "INTEGER");
         TryAddColumn("ui_prefs", "window_maximized", "INTEGER NOT NULL DEFAULT 0");
         TryAddColumn("ui_prefs", "start_with_windows", "INTEGER NOT NULL DEFAULT 0");
+        TryAddColumn("ui_prefs", "library_sort", "TEXT NOT NULL DEFAULT 'title_asc'");
+        TryAddColumn("ui_prefs", "library_play_status", "TEXT NOT NULL DEFAULT ''");
+        TryAddColumn("ui_prefs", "library_install_filter", "TEXT NOT NULL DEFAULT 'all'");
+        TryAddColumn("ui_prefs", "library_grid_view", "INTEGER NOT NULL DEFAULT 1");
         TryAddColumn("download_jobs", "game_title", "TEXT");
     }
 
@@ -72,7 +76,9 @@ public sealed class LocalDatabase : IDisposable
                    COALESCE(library_hover_previews, 1), COALESCE(browse_hover_previews, 1),
                    COALESCE(hover_preview_interval_ms, 1800), ignored_update_version,
                    window_width, window_height, window_x, window_y,
-                   COALESCE(window_maximized, 0), COALESCE(start_with_windows, 0)
+                   COALESCE(window_maximized, 0), COALESCE(start_with_windows, 0),
+                   COALESCE(library_sort, 'title_asc'), COALESCE(library_play_status, ''),
+                   COALESCE(library_install_filter, 'all'), COALESCE(library_grid_view, 1)
             FROM ui_prefs WHERE id = 1
             """,
             r => new UiPreferences
@@ -90,7 +96,11 @@ public sealed class LocalDatabase : IDisposable
                 WindowX = r.IsDBNull(14) ? null : r.GetInt32(14),
                 WindowY = r.IsDBNull(15) ? null : r.GetInt32(15),
                 WindowMaximized = !r.IsDBNull(16) && r.GetInt64(16) != 0,
-                StartWithWindows = !r.IsDBNull(17) && r.GetInt64(17) != 0
+                StartWithWindows = !r.IsDBNull(17) && r.GetInt64(17) != 0,
+                LibrarySort = r.IsDBNull(18) ? "title_asc" : r.GetString(18),
+                LibraryPlayStatus = r.IsDBNull(19) ? "" : r.GetString(19),
+                LibraryInstallFilter = r.IsDBNull(20) ? "all" : r.GetString(20),
+                LibraryGridView = r.IsDBNull(21) || r.GetInt64(21) != 0
             }, new UiPreferences(), cancellationToken);
 
     public Task SaveUiPreferencesAsync(UiPreferences value, CancellationToken cancellationToken = default) =>
@@ -99,9 +109,10 @@ public sealed class LocalDatabase : IDisposable
             INSERT INTO ui_prefs(id,accent_hex,glass_blur,compact_density,library_root,download_concurrency,auto_extract,
                                  library_setup_done,datanodes_api_key,library_card_scale,
                                  library_hover_previews,browse_hover_previews,hover_preview_interval_ms,ignored_update_version,
-                                 window_width,window_height,window_x,window_y,window_maximized,start_with_windows)
+                                 window_width,window_height,window_x,window_y,window_maximized,start_with_windows,
+                                 library_sort,library_play_status,library_install_filter,library_grid_view)
             VALUES(1,$accent,$blur,$compact,$root,$concurrency,$extract,$setup,NULL,$scale,$libHover,$browseHover,$hoverMs,$ignored,
-                   $winW,$winH,$winX,$winY,$winMax,$startWin)
+                   $winW,$winH,$winX,$winY,$winMax,$startWin,$libSort,$libStatus,$libInstall,$libGrid)
             ON CONFLICT(id) DO UPDATE SET
               accent_hex=$accent, glass_blur=$blur, compact_density=$compact, library_root=$root,
               download_concurrency=$concurrency, auto_extract=$extract, library_setup_done=$setup,
@@ -109,7 +120,9 @@ public sealed class LocalDatabase : IDisposable
               library_hover_previews=$libHover, browse_hover_previews=$browseHover,
               hover_preview_interval_ms=$hoverMs, ignored_update_version=$ignored,
               window_width=$winW, window_height=$winH, window_x=$winX, window_y=$winY,
-              window_maximized=$winMax, start_with_windows=$startWin
+              window_maximized=$winMax, start_with_windows=$startWin,
+              library_sort=$libSort, library_play_status=$libStatus,
+              library_install_filter=$libInstall, library_grid_view=$libGrid
             """,
             [
                 ("$accent", value.AccentHex), ("$blur", value.GlassBlur), ("$compact", value.CompactDensity ? 1 : 0),
@@ -125,7 +138,11 @@ public sealed class LocalDatabase : IDisposable
                 ("$winX", value.WindowX),
                 ("$winY", value.WindowY),
                 ("$winMax", value.WindowMaximized ? 1 : 0),
-                ("$startWin", value.StartWithWindows ? 1 : 0)
+                ("$startWin", value.StartWithWindows ? 1 : 0),
+                ("$libSort", string.IsNullOrWhiteSpace(value.LibrarySort) ? "title_asc" : value.LibrarySort),
+                ("$libStatus", value.LibraryPlayStatus ?? ""),
+                ("$libInstall", string.IsNullOrWhiteSpace(value.LibraryInstallFilter) ? "all" : value.LibraryInstallFilter),
+                ("$libGrid", value.LibraryGridView ? 1 : 0)
             ],
             cancellationToken);
 
@@ -147,6 +164,29 @@ public sealed class LocalDatabase : IDisposable
             ON CONFLICT(id) DO UPDATE SET library_card_scale=$scale
             """,
             [("$scale", scale)],
+            cancellationToken);
+
+    public Task UpdateLibrarySessionPrefsAsync(
+        string sort,
+        string playStatus,
+        string installFilter,
+        bool gridView,
+        CancellationToken cancellationToken = default) =>
+        ExecuteAsync(
+            """
+            INSERT INTO ui_prefs(id,accent_hex,glass_blur,compact_density,library_root,download_concurrency,auto_extract,library_setup_done,
+                                 library_sort,library_play_status,library_install_filter,library_grid_view)
+            VALUES(1,'#3D9CF0',24,0,'',2,1,0,$sort,$status,$install,$grid)
+            ON CONFLICT(id) DO UPDATE SET
+              library_sort=$sort, library_play_status=$status,
+              library_install_filter=$install, library_grid_view=$grid
+            """,
+            [
+                ("$sort", string.IsNullOrWhiteSpace(sort) ? "title_asc" : sort),
+                ("$status", playStatus ?? ""),
+                ("$install", string.IsNullOrWhiteSpace(installFilter) ? "all" : installFilter),
+                ("$grid", gridView ? 1 : 0)
+            ],
             cancellationToken);
 
     public Task ResetConnectionAsync(CancellationToken cancellationToken = default) =>

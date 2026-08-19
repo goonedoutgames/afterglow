@@ -154,6 +154,26 @@ public sealed class AfterglowAppService : IDisposable
         await _db.UpdateLibraryCardScaleAsync(scale, ct);
     }
 
+    /// <summary>Steam-style: persist sort/filters/view without rewriting the whole prefs row.</summary>
+    public async Task SaveLibrarySessionPrefsAsync(
+        string sort,
+        string playStatus,
+        string installFilter,
+        bool gridView,
+        CancellationToken ct = default)
+    {
+        Preferences.LibrarySort = string.IsNullOrWhiteSpace(sort) ? "title_asc" : sort;
+        Preferences.LibraryPlayStatus = playStatus ?? "";
+        Preferences.LibraryInstallFilter = string.IsNullOrWhiteSpace(installFilter) ? "all" : installFilter;
+        Preferences.LibraryGridView = gridView;
+        await _db.UpdateLibrarySessionPrefsAsync(
+            Preferences.LibrarySort,
+            Preferences.LibraryPlayStatus,
+            Preferences.LibraryInstallFilter,
+            Preferences.LibraryGridView,
+            ct);
+    }
+
     public async Task SetIgnoredUpdateVersionAsync(string? version, CancellationToken ct = default)
     {
         Preferences.IgnoredUpdateVersion = string.IsNullOrWhiteSpace(version) ? null : version.Trim();

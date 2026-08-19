@@ -561,24 +561,42 @@ public partial class LibraryItemViewModel : ViewModelBase
     public IReadOnlyList<StarSlotViewModel> F95Stars { get; init; } = [];
     public List<string> Tags { get; init; } = [];
     public string? CoverUrl { get; init; }
+    public string? CoverVersion { get; init; }
     public List<string> ImageCandidates { get; init; } = [];
     [ObservableProperty] private Bitmap? _cover;
     [ObservableProperty] private AnimatedMedia? _coverAnimation;
     [ObservableProperty] private bool _hoverEnabled = true;
     [ObservableProperty] private int _hoverIntervalMs = 1800;
+    public bool HoverGalleryReady { get; private set; }
+    public bool HoverArmed { get; set; }
 
-    public void SetGalleryFrames(IEnumerable<Bitmap> frames, AnimatedMedia? animatedCover = null)
+    public void SetCover(Bitmap? cover, AnimatedMedia? animatedCover = null)
     {
-        _galleryFrames.Clear();
-        _galleryFrames.AddRange(frames);
-        _hoverIndex = 0;
         CoverAnimation = animatedCover;
-        Cover = _galleryFrames.FirstOrDefault() ?? animatedCover?.Preview;
+        Cover = cover ?? animatedCover?.Preview;
+        if (cover is not null && (_galleryFrames.Count == 0 || !ReferenceEquals(_galleryFrames[0], cover)))
+        {
+            if (_galleryFrames.Count == 0) _galleryFrames.Add(cover);
+            else _galleryFrames[0] = cover;
+        }
+    }
+
+    public void SetHoverFrames(IEnumerable<Bitmap> extraFrames)
+    {
+        var cover = Cover ?? _galleryFrames.FirstOrDefault();
+        _galleryFrames.Clear();
+        if (cover is not null) _galleryFrames.Add(cover);
+        foreach (var frame in extraFrames)
+        {
+            if (frame is null || ReferenceEquals(frame, cover)) continue;
+            _galleryFrames.Add(frame);
+        }
+        HoverGalleryReady = true;
     }
 
     public void StartHoverPreview()
     {
-        if (!HoverEnabled || _galleryFrames.Count <= 1 || CoverAnimation is not null) return;
+        if (!HoverEnabled || !HoverArmed || _galleryFrames.Count <= 1 || CoverAnimation is not null) return;
         _hoverTimer ??= new DispatcherTimer();
         _hoverTimer.Tick -= OnHoverTick;
         _hoverTimer.Tick += OnHoverTick;
@@ -588,6 +606,7 @@ public partial class LibraryItemViewModel : ViewModelBase
 
     public void StopHoverPreview()
     {
+        HoverArmed = false;
         _hoverTimer?.Stop();
         _hoverIndex = 0;
         if (_galleryFrames.Count > 0)
@@ -727,6 +746,8 @@ public partial class LibraryViewModel : ViewModelBase
     private readonly Func<long, Task> _openGame;
     private readonly List<LibraryItemViewModel> _allGames = [];
     private bool _suppressFilterRefresh;
+    private CancellationTokenSource? _coverCts;
+    private const int TagCollapseLimit = 5;
 
     public LibraryViewModel(AfterglowAppService app, MediaCacheService media, ToastService toasts, Func<long, Task> openGame)
     {
@@ -735,16 +756,14 @@ public partial class LibraryViewModel : ViewModelBase
         _toasts = toasts;
         _openGame = openGame;
         _suppressFilterRefresh = true;
-        SortBy = SortChoices[0];
-        StatusFilter = StatusChoices[0];
-        InstallFilter = InstallChoices[0];
-        CardSizeChoice = CardSizeChoices[1];
+        ApplySessionFromPrefs();
         ApplyCardSizeFromPrefs();
         _suppressFilterRefresh = false;
     }
 
     public ObservableCollection<LibraryItemViewModel> Games { get; } = [];
     public ObservableCollection<LibraryTagFilterItem> AvailableTags { get; } = [];
+    public ObservableCollection<LibraryTagFilterItem> VisibleTags { get; } = [];
     public ObservableCollection<string> SelectedTags { get; } = [];
 
     public ObservableCollection<LibraryChoice> SortChoices { get; } =
@@ -798,15 +817,20 @@ public partial class LibraryViewModel : ViewModelBase
     [ObservableProperty] private double _metaFontSize = 13.5;
     [ObservableProperty] private bool _hasSelectedTags;
     [ObservableProperty] private string _selectedTagsLabel = "";
+    [ObservableProperty] private bool _tagsExpanded;
+    [ObservableProperty] private bool _showTagOverflow;
+    [ObservableProperty] private string _tagOverflowLabel = "";
 
     public async Task RefreshAsync()
     {
-        Busy = true; Error = null; MediaStatus = "Loading covers…";
+        Busy = true; Error = null; MediaStatus = null;
         _media.ResetStats();
+        _coverCts?.Cancel();
+        _coverCts = new CancellationTokenSource();
+        var coverCt = _coverCts.Token;
         try
         {
             var sortValue = SortBy?.Value ?? "title_asc";
-            var hubSort = sortValue is "playtime_desc" ? "title_asc" : sortValue;
             var statusValue = StatusFilter?.Value;
             if (string.IsNullOrWhiteSpace(statusValue)) statusValue = null;
             var tagsParam = SelectedTags.Count > 0 ? string.Join(",", SelectedTags) : null;
@@ -814,7 +838,7 @@ public partial class LibraryViewModel : ViewModelBase
             var listTask = _app.Hub.GetLibraryAsync(
                 string.IsNullOrWhiteSpace(Search) ? null : Search.Trim(),
                 statusValue,
-                hubSort,
+                sortValue,
                 tags: tagsParam);
             var tagsTask = _app.Hub.GetLibraryTagsAsync();
             await Task.WhenAll(listTask, tagsTask);
@@ -857,6 +881,7 @@ public partial class LibraryViewModel : ViewModelBase
                     F95Stars = BuildCompactStars(f95Rating),
                     Tags = TagHelpers.HumanTags(g.Game.Tags),
                     CoverUrl = g.CoverUrl,
+                    CoverVersion = g.Game.UpdatedAt,
                     ImageCandidates = candidates
                 };
                 _allGames.Add(item);
@@ -871,17 +896,12 @@ public partial class LibraryViewModel : ViewModelBase
 
             ApplyLocalFilters();
             UpdateSelectedTagsLabel();
-
-            var missingUrls = _allGames.Count(g => g.ImageCandidates.Count == 0);
-            var tasks = _allGames.Select(LoadCoverAsync).ToArray();
-            await Task.WhenAll(tasks);
-
-            MediaStatus = missingUrls > 0
-                ? $"Covers {_media.SuccessCount}/{_allGames.Count} · {missingUrls} games have no cover_url from hub. {_media.LastError}"
-                : $"Covers {_media.SuccessCount}/{_allGames.Count} loaded." + (_media.LastError is null ? "" : $" Last issue: {_media.LastError}");
+            var toLoad = _allGames.ToList();
+            var missingUrls = toLoad.Count(g => g.ImageCandidates.Count == 0);
+            Busy = false;
+            _ = LoadCoversProgressivelyAsync(toLoad, missingUrls, coverCt);
         }
-        catch (Exception ex) { Error = ex.Message; MediaStatus = null; }
-        finally { Busy = false; }
+        catch (Exception ex) { Error = ex.Message; MediaStatus = null; Busy = false; }
     }
 
     private void RefreshAvailableTags(List<LibraryTag> tagList)
@@ -898,6 +918,40 @@ public partial class LibraryViewModel : ViewModelBase
                 IsSelected = selected.Contains(t.Tag)
             });
         }
+        RebuildVisibleTags();
+    }
+
+    private void RebuildVisibleTags()
+    {
+        VisibleTags.Clear();
+        if (TagsExpanded || AvailableTags.Count <= TagCollapseLimit)
+        {
+            foreach (var t in AvailableTags) VisibleTags.Add(t);
+        }
+        else
+        {
+            var selected = AvailableTags.Where(t => t.IsSelected).ToList();
+            var rest = AvailableTags.Where(t => !t.IsSelected);
+            foreach (var t in selected) VisibleTags.Add(t);
+            foreach (var t in rest)
+            {
+                if (VisibleTags.Count >= TagCollapseLimit) break;
+                VisibleTags.Add(t);
+            }
+        }
+
+        var hidden = Math.Max(0, AvailableTags.Count - VisibleTags.Count);
+        ShowTagOverflow = hidden > 0 || (TagsExpanded && AvailableTags.Count > TagCollapseLimit);
+        TagOverflowLabel = TagsExpanded && AvailableTags.Count > TagCollapseLimit
+            ? "Show less"
+            : hidden > 0 ? $"+{hidden} more" : "";
+    }
+
+    [RelayCommand]
+    private void ToggleTagOverflow()
+    {
+        TagsExpanded = !TagsExpanded;
+        RebuildVisibleTags();
     }
 
     public void ApplyTagFilter(string tag)
@@ -910,6 +964,7 @@ public partial class LibraryViewModel : ViewModelBase
         UpdateSelectedTagsLabel();
         foreach (var item in AvailableTags)
             item.IsSelected = string.Equals(item.Tag, clean, StringComparison.OrdinalIgnoreCase);
+        RebuildVisibleTags();
         _ = RefreshAsync();
     }
 
@@ -931,6 +986,7 @@ public partial class LibraryViewModel : ViewModelBase
         }
         HasSelectedTags = SelectedTags.Count > 0;
         UpdateSelectedTagsLabel();
+        RebuildVisibleTags();
         _ = RefreshAsync();
     }
 
@@ -941,6 +997,7 @@ public partial class LibraryViewModel : ViewModelBase
         foreach (var t in AvailableTags) t.IsSelected = false;
         HasSelectedTags = false;
         UpdateSelectedTagsLabel();
+        RebuildVisibleTags();
         _ = RefreshAsync();
     }
 
@@ -954,25 +1011,59 @@ public partial class LibraryViewModel : ViewModelBase
     partial void OnSortByChanged(LibraryChoice? value)
     {
         if (_suppressFilterRefresh || value is null) return;
+        _ = PersistSessionAsync();
         _ = RefreshAsync();
     }
 
     partial void OnStatusFilterChanged(LibraryChoice? value)
     {
         if (_suppressFilterRefresh || value is null) return;
+        _ = PersistSessionAsync();
         _ = RefreshAsync();
     }
 
     partial void OnInstallFilterChanged(LibraryChoice? value)
     {
         if (_suppressFilterRefresh || value is null) return;
+        _ = PersistSessionAsync();
         ApplyLocalFilters();
+    }
+
+    partial void OnGridViewChanged(bool value)
+    {
+        if (_suppressFilterRefresh) return;
+        _ = PersistSessionAsync();
     }
 
     partial void OnCardSizeChoiceChanged(LibraryChoice? value)
     {
         if (_suppressFilterRefresh || value is null) return;
         _ = PersistCardSizeAsync();
+    }
+
+    private void ApplySessionFromPrefs()
+    {
+        var prefs = _app.Preferences;
+        SortBy = SortChoices.FirstOrDefault(c => string.Equals(c.Value, prefs.LibrarySort, StringComparison.OrdinalIgnoreCase))
+                 ?? SortChoices[0];
+        StatusFilter = StatusChoices.FirstOrDefault(c => string.Equals(c.Value, prefs.LibraryPlayStatus, StringComparison.OrdinalIgnoreCase))
+                       ?? StatusChoices[0];
+        InstallFilter = InstallChoices.FirstOrDefault(c => string.Equals(c.Value, prefs.LibraryInstallFilter, StringComparison.OrdinalIgnoreCase))
+                        ?? InstallChoices[0];
+        GridView = prefs.LibraryGridView;
+    }
+
+    private async Task PersistSessionAsync()
+    {
+        try
+        {
+            await _app.SaveLibrarySessionPrefsAsync(
+                SortBy?.Value ?? "title_asc",
+                StatusFilter?.Value ?? "",
+                InstallFilter?.Value ?? "all",
+                GridView);
+        }
+        catch { /* non-fatal */ }
     }
 
     private void ApplyCardSizeFromPrefs()
@@ -1048,56 +1139,74 @@ public partial class LibraryViewModel : ViewModelBase
         return slots;
     }
 
-    private async Task LoadCoverAsync(LibraryItemViewModel item)
+    private async Task LoadCoversProgressivelyAsync(List<LibraryItemViewModel> items, int missingUrls, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.WhenAll(items.Select(item => LoadCoverAsync(item, cancellationToken)));
+            if (cancellationToken.IsCancellationRequested) return;
+            if (missingUrls > 0 || _media.LastError is not null)
+            {
+                MediaStatus = missingUrls > 0
+                    ? $"{missingUrls} games have no cover from the hub." + (_media.LastError is null ? "" : $" {_media.LastError}")
+                    : _media.LastError;
+            }
+        }
+        catch (OperationCanceledException) { /* refresh superseded */ }
+        catch (Exception ex) { MediaStatus = ex.Message; }
+    }
+
+    private async Task LoadCoverAsync(LibraryItemViewModel item, CancellationToken cancellationToken = default)
     {
         var hoverOn = _app.Preferences.LibraryHoverPreviewsEnabled;
-        var frames = new List<Bitmap>();
-        AnimatedMedia? coverAnimation = null;
+        var request = MediaCacheRequest.Thumbnail(item.CoverVersion);
+        Bitmap? cover = null;
 
-        // Pin the card face to CoverUrl. Hover gallery may include screenshots/banner GIFs, but
-        // those must not become CoverAnimation — AnimatedImageView prefers Media over FallbackSource,
-        // which made custom covers disappear on the library grid (Aetegina).
         if (!string.IsNullOrWhiteSpace(item.CoverUrl))
-        {
-            var coverMedia = await _media.GetMediaAsync(item.CoverUrl);
-            if (coverMedia?.Preview is not null)
-                frames.Add(coverMedia.Preview);
-            if (coverMedia is { IsAnimated: true })
-                coverAnimation = coverMedia;
-        }
+            cover = await _media.GetAsync(item.CoverUrl, request, cancellationToken);
 
-        if (hoverOn)
+        if (cover is null)
         {
-            foreach (var url in item.ImageCandidates.Distinct(StringComparer.OrdinalIgnoreCase).Take(8))
-            {
-                if (!string.IsNullOrWhiteSpace(item.CoverUrl)
-                    && string.Equals(url, item.CoverUrl, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                var media = await _media.GetMediaAsync(url);
-                if (media?.Preview is not null)
-                    frames.Add(media.Preview);
-            }
-        }
-        else if (frames.Count == 0)
-        {
-            // No CoverUrl (or it failed) — fall back to first preview candidate.
             foreach (var url in item.ImageCandidates.Distinct(StringComparer.OrdinalIgnoreCase).Take(1))
             {
-                var media = await _media.GetMediaAsync(url);
-                if (media?.Preview is not null)
-                    frames.Add(media.Preview);
-                if (media is { IsAnimated: true })
-                    coverAnimation = media;
-                break;
+                cover = await _media.GetAsync(url, request, cancellationToken);
+                if (cover is not null) break;
             }
         }
 
+        if (cancellationToken.IsCancellationRequested) return;
         await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
         {
             item.HoverEnabled = hoverOn;
             item.HoverIntervalMs = Math.Clamp(_app.Preferences.HoverPreviewIntervalMs, 400, 10000);
-            item.SetGalleryFrames(frames, coverAnimation);
+            item.SetCover(cover);
         });
+    }
+
+    public async Task BeginHoverAsync(LibraryItemViewModel item)
+    {
+        if (!item.HoverEnabled) return;
+        item.HoverArmed = true;
+        if (!item.HoverGalleryReady)
+            await LoadHoverGalleryAsync(item);
+        if (item.HoverArmed)
+            item.StartHoverPreview();
+    }
+
+    private async Task LoadHoverGalleryAsync(LibraryItemViewModel item)
+    {
+        var extras = new List<Bitmap>();
+        var request = MediaCacheRequest.Thumbnail(item.CoverVersion);
+        foreach (var url in item.ImageCandidates.Distinct(StringComparer.OrdinalIgnoreCase).Take(6))
+        {
+            if (!string.IsNullOrWhiteSpace(item.CoverUrl)
+                && string.Equals(url, item.CoverUrl, StringComparison.OrdinalIgnoreCase))
+                continue;
+            var bmp = await _media.GetAsync(url, request);
+            if (bmp is not null) extras.Add(bmp);
+        }
+
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => item.SetHoverFrames(extras));
     }
 
     [RelayCommand]
@@ -1592,7 +1701,7 @@ public partial class BrowseViewModel : ViewModelBase
                 var item = new CatalogItemViewModel
                 {
                     Result = r,
-                    IsInLibrary = _libraryThreadIds.Contains(r.ThreadId),
+                    IsInLibrary = r.InLibrary || _libraryThreadIds.Contains(r.ThreadId),
                     IsAdding = _addingThreadIds.Contains(r.ThreadId)
                 };
                 Results.Add(item);
@@ -2445,6 +2554,10 @@ public partial class SettingsViewModel : ViewModelBase
                 AutoExtract = existing.AutoExtract,
                 LibrarySetupComplete = true,
                 LibraryCardScale = existing.LibraryCardScale,
+                LibrarySort = existing.LibrarySort,
+                LibraryPlayStatus = existing.LibraryPlayStatus,
+                LibraryInstallFilter = existing.LibraryInstallFilter,
+                LibraryGridView = existing.LibraryGridView,
                 LibraryHoverPreviewsEnabled = LibraryHoverPreviewsEnabled,
                 BrowseHoverPreviewsEnabled = false,
                 HoverPreviewIntervalMs = hoverMs,
@@ -2748,7 +2861,7 @@ public partial class GameDetailViewModel : ViewModelBase
         if (!string.IsNullOrWhiteSpace(detail.CoverFullUrl)) coverCandidates.Add(detail.CoverFullUrl!);
         if (coverCandidates.Count == 0)
             MediaStatus = "Hub returned no cover_url — try Refresh metadata.";
-        await LoadCoverAsync(coverCandidates);
+        await LoadCoverAsync(coverCandidates, detail.Game.UpdatedAt);
         if (Cover is null && coverCandidates.Count > 0)
             MediaStatus = _media.LastError ?? "Cover download/decode failed.";
 
@@ -2961,11 +3074,12 @@ public partial class GameDetailViewModel : ViewModelBase
         }
     }
 
-    private async Task LoadCoverAsync(IEnumerable<string> urls)
+    private async Task LoadCoverAsync(IEnumerable<string> urls, string? sourceVersion = null)
     {
+        var request = MediaCacheRequest.Detail(sourceVersion);
         foreach (var url in urls.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            var media = await _media.GetMediaAsync(url);
+            var media = await _media.GetMediaAsync(url, request);
             if (media is null) continue;
             await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
             {
@@ -3082,7 +3196,7 @@ public partial class GameDetailViewModel : ViewModelBase
             if (!string.IsNullOrWhiteSpace(detail.CoverUrl)) coverCandidates.Add(detail.CoverUrl!);
             if (!string.IsNullOrWhiteSpace(detail.CoverFullUrl)) coverCandidates.Add(detail.CoverFullUrl!);
             if (coverCandidates.Count > 0)
-                await LoadCoverAsync(coverCandidates);
+                await LoadCoverAsync(coverCandidates, detail.Game.UpdatedAt);
 
             Status = "Cover updated";
             GalleryFeedback = "Cover updated";
@@ -3109,7 +3223,7 @@ public partial class GameDetailViewModel : ViewModelBase
             var coverCandidates = new List<string>();
             if (!string.IsNullOrWhiteSpace(detail.CoverUrl)) coverCandidates.Add(detail.CoverUrl!);
             if (!string.IsNullOrWhiteSpace(detail.CoverFullUrl)) coverCandidates.Add(detail.CoverFullUrl!);
-            await LoadCoverAsync(coverCandidates);
+            await LoadCoverAsync(coverCandidates, detail.Game.UpdatedAt);
             Status = "Cover reset";
             _toasts.ShowRich("Cover reset", title: Title, cover: Cover, kind: ToastKind.Success);
         }

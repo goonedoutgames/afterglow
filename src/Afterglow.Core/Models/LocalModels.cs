@@ -20,8 +20,16 @@ public sealed class UiPreferences
     public bool AutoExtract { get; set; } = true;
     /// <summary>False until the user confirms a Steam-style library folder.</summary>
     public bool LibrarySetupComplete { get; set; }
-    /// <summary>Library grid card scale (0.75–1.5). Default 1.0.</summary>
+    /// <summary>Library grid card scale (0.75–2.0). Default 1.0.</summary>
     public double LibraryCardScale { get; set; } = 1.0;
+    /// <summary>Library sort key (`title_asc`, `playtime_desc`, …).</summary>
+    public string LibrarySort { get; set; } = "title_asc";
+    /// <summary>Play-status filter; empty means any status.</summary>
+    public string LibraryPlayStatus { get; set; } = "";
+    /// <summary>`all` or `installed`.</summary>
+    public string LibraryInstallFilter { get; set; } = "all";
+    /// <summary>True = grid cards; false = list.</summary>
+    public bool LibraryGridView { get; set; } = true;
     public bool LibraryHoverPreviewsEnabled { get; set; } = true;
     public bool BrowseHoverPreviewsEnabled { get; set; } = true;
     /// <summary>Hover slideshow interval in milliseconds (400–10000).</summary>

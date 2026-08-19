@@ -32,10 +32,18 @@ public partial class LibraryView : UserControl
         vm.ToggleTagFilterCommand.Execute(item);
     }
 
-    private void GameCard_PointerEntered(object? sender, PointerEventArgs e)
+    private async void GameCard_PointerEntered(object? sender, PointerEventArgs e)
     {
-        if (sender is Border { Tag: LibraryItemViewModel item })
-            item.StartHoverPreview();
+        if (sender is not Border { Tag: LibraryItemViewModel item }) return;
+        if (DataContext is not LibraryViewModel vm) return;
+        await vm.BeginHoverAsync(item);
+    }
+
+    private void TagOverflow_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (DataContext is not LibraryViewModel vm) return;
+        e.Handled = true;
+        vm.ToggleTagOverflowCommand.Execute(null);
     }
 
     private void GameCard_PointerExited(object? sender, PointerEventArgs e)

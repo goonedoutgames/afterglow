@@ -189,12 +189,14 @@ public sealed class HubApiClient : IDisposable
 
     public async Task<byte[]?> DownloadBytesAsync(string url, CancellationToken cancellationToken = default)
     {
-        var (bytes, _, _) = await DownloadBytesDetailedAsync(url, cancellationToken);
-        return bytes;
+        var result = await DownloadBytesDetailedAsync(url, cancellationToken: cancellationToken);
+        return result.Bytes;
     }
 
-    public async Task<(byte[]? Bytes, string? Error, int? Status)> DownloadBytesDetailedAsync(
-        string url, CancellationToken cancellationToken = default)
+    public async Task<MediaDownloadResult> DownloadBytesDetailedAsync(
+        string url,
+        string? ifNoneMatch = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -212,6 +214,8 @@ public sealed class HubApiClient : IDisposable
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
             // Prefer formats Avalonia can decode; AVIF still converted via Magick when hub already cached it.
             request.Headers.TryAddWithoutValidation("Accept", "image/webp,image/jpeg,image/png,image/gif,image/*,*/*;q=0.8");
+            if (!string.IsNullOrWhiteSpace(ifNoneMatch))
+                request.Headers.TryAddWithoutValidation("If-None-Match", ifNoneMatch);
             // F95 attachment CDN often 403s without a forum referer.
             if (uri.Host.Contains("f95zone", StringComparison.OrdinalIgnoreCase))
                 request.Headers.Referrer = new Uri("https://f95zone.to/");
@@ -220,28 +224,36 @@ public sealed class HubApiClient : IDisposable
 
             using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             var status = (int)response.StatusCode;
+            var etag = response.Headers.ETag?.Tag;
+            if (response.StatusCode == System.Net.HttpStatusCode.NotModified)
+                return new MediaDownloadResult { Status = status, ETag = etag, NotModified = true };
+
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
                 var snippet = body.Length > 120 ? body[..120] : body;
-                return (null, $"HTTP {status} for {uri.Host}{uri.AbsolutePath}: {snippet}", status);
+                return new MediaDownloadResult
+                {
+                    Error = $"HTTP {status} for {uri.Host}{uri.AbsolutePath}: {snippet}",
+                    Status = status
+                };
             }
 
             var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-            return (bytes, null, status);
+            return new MediaDownloadResult { Bytes = bytes, Status = status, ETag = etag };
         }
         catch (Exception ex)
         {
-            return (null, ex.Message, null);
+            return new MediaDownloadResult { Error = ex.Message };
         }
     }
 
     public async Task<Stream> OpenStreamAsync(string url, CancellationToken cancellationToken = default)
     {
-        var (bytes, error, _) = await DownloadBytesDetailedAsync(url, cancellationToken);
-        if (bytes is null)
-            throw new HubApiException(System.Net.HttpStatusCode.NotFound, error ?? "Media download failed.");
-        return new MemoryStream(bytes, writable: false);
+        var result = await DownloadBytesDetailedAsync(url, cancellationToken: cancellationToken);
+        if (result.Bytes is null)
+            throw new HubApiException(System.Net.HttpStatusCode.NotFound, result.Error ?? "Media download failed.");
+        return new MemoryStream(result.Bytes, writable: false);
     }
 
     public Task<SettingsView> GetSettingsAsync(CancellationToken cancellationToken = default) =>
@@ -416,6 +428,15 @@ public sealed class HubApiClient : IDisposable
 internal sealed class HealthResponse
 {
     public bool Ok { get; set; }
+}
+
+public sealed class MediaDownloadResult
+{
+    public byte[]? Bytes { get; init; }
+    public string? Error { get; init; }
+    public int? Status { get; init; }
+    public string? ETag { get; init; }
+    public bool NotModified { get; init; }
 }
 
 public sealed class HubApiException(System.Net.HttpStatusCode statusCode, string message) : Exception(message)
